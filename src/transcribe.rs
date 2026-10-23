@@ -16,6 +16,8 @@ use rustfft::num_complex::Complex32;
 use std::path::{Path, PathBuf};
 
 const HF: &str = "https://huggingface.co/onnx-community";
+const BASE_REVISION: &str = "1846881b6b3a3024392c1eea3ad983695bc23925";
+const SMALL_REVISION: &str = "36050c46d777d46dc4b5f43f6d90574fc38f8732";
 
 /// Fast: Whisper base (~77 MB). Best: Whisper small (~250 MB), ~1.5x slower but far fewer
 /// mistakes in Spanish, so it's the default.
@@ -50,9 +52,17 @@ const MAX_TOKENS: usize = 448;
 fn model(quality: Quality, part: &str) -> Result<PathBuf, String> {
     let size = quality.size();
     let remote = if part == "encoder" { "encoder_model" } else { "decoder_model_merged" };
+    // Fixed versions of the repositories, so the files (and their SHA-256) never change.
+    let (revision, sha256) = match (quality, part) {
+        (Quality::Fast, "encoder") => (BASE_REVISION, "5862993336bf33acd23736071aae2b32261d3b1b2f37780194460d4ef974dd46"),
+        (Quality::Fast, _) => (BASE_REVISION, "fa3ef9902734ce5ae6f9ef2bdb2ba9a6c4b5785b09f4f420ce036573dc9d090b"),
+        (Quality::Best, "encoder") => (SMALL_REVISION, "a43a83f3c5361cd591cfa7c36f14b43cf7cb22f47a415cc14a8d557be800fa92"),
+        (Quality::Best, _) => (SMALL_REVISION, "ec07c3cbb64172c39791e26ee870a65ac22b458c36722bfe2776b3dbf741e0c9"),
+    };
     crate::models::get(
         &format!("whisper-{size}-{part}.onnx"),
-        &format!("{HF}/whisper-{size}/resolve/main/onnx/{remote}_quantized.onnx"),
+        &format!("{HF}/whisper-{size}/resolve/{revision}/onnx/{remote}_quantized.onnx"),
+        sha256,
     )
 }
 
@@ -61,7 +71,8 @@ fn model(quality: Quality, part: &str) -> Result<PathBuf, String> {
 fn tokenizer() -> Result<Tokenizer, String> {
     let json = std::fs::read_to_string(crate::models::get(
         TOKENIZER,
-        &format!("{HF}/whisper-base/resolve/main/tokenizer.json"),
+        &format!("{HF}/whisper-base/resolve/{BASE_REVISION}/tokenizer.json"),
+        "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566",
     )?).map_err(|e| e.to_string())?;
     let mut value: serde_json::Value = serde_json::from_str(&json).map_err(|e| e.to_string())?;
     if let Some(model) = value.get_mut("model").and_then(|m| m.as_object_mut()) {
@@ -404,5 +415,16 @@ mod tests {
         };
         let text = super::text_of(path.as_ref(), quality, &|p| eprint!("\r{:.0}%", p * 100.0)).unwrap();
         println!("\n{text}\n({:?})", start.elapsed());
+        let rss = || {
+            std::fs::read_to_string("/proc/self/status")
+                .unwrap_or_default()
+                .lines()
+                .find(|l| l.starts_with("VmRSS"))
+                .unwrap_or_default()
+                .to_string()
+        };
+        println!("memory after: {}", rss());
+        crate::models::give_back_memory();
+        println!("memory given back: {}", rss());
     }
 }

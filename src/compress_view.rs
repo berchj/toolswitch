@@ -46,6 +46,8 @@ impl CompressView {
                 let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     compress::compress(&file, &settings)
                 }));
+                // Big images are freed by now: return that memory to the system.
+                crate::models::give_back_memory();
                 let status = match outcome {
                     Ok(Ok(outcome)) => Status::Done(outcome),
                     Ok(Err(error)) => Status::Failed(error),

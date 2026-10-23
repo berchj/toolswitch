@@ -9,9 +9,13 @@ use std::sync::OnceLock;
 
 const OCRS_URL: &str = "https://ocrs-models.s3-accelerate.amazonaws.com";
 const DETECTION: &str = "text-detection.onnx";
-const PADDLE_URL: &str = "https://huggingface.co/monkt/paddleocr-onnx/resolve/main/languages/latin";
+const DETECTION_SHA256: &str = "a917b23dbd9524b465df7e922641b3ff2981623df4ded5a0234004ef2fee7cfe";
+// A fixed version of the repository, so the files (and their SHA-256) never change.
+const PADDLE_URL: &str = "https://huggingface.co/monkt/paddleocr-onnx/resolve/7b02d0a30a07ba2b92ad1ff5a8941ae2c633de65/languages/latin";
 const RECOGNITION: &str = "latin-PP-OCRv5-rec.onnx";
+const RECOGNITION_SHA256: &str = "614ffc2d6d3902d360fad7f1b0dd455ee45e877069d14c4e51a99dc4ef144409";
 const DICT: &str = "latin-PP-OCRv5-dict.txt";
+const DICT_SHA256: &str = "3c0a8a79b612653c25f765271714f71281e4e955962c153e272b7b8c1d2b13ff";
 /// ocrs' own reader, used before: it only knew letters without accents.
 const OLD_RECOGNITION: &str = "text-recognition.onnx";
 /// The height PaddleOCR reads lines at.
@@ -22,7 +26,7 @@ fn finder() -> Result<&'static OcrEngine, String> {
     static ENGINE: OnceLock<Result<OcrEngine, String>> = OnceLock::new();
     ENGINE
         .get_or_init(|| {
-            let detection = crate::models::load(DETECTION, &format!("{OCRS_URL}/{DETECTION}"))?;
+            let detection = crate::models::load(DETECTION, &format!("{OCRS_URL}/{DETECTION}"), DETECTION_SHA256)?;
             OcrEngine::new(OcrEngineParams {
                 detection_model: Some(detection),
                 ..Default::default()
@@ -43,8 +47,8 @@ fn reader() -> Result<&'static Reader, String> {
     static READER: OnceLock<Result<Reader, String>> = OnceLock::new();
     READER
         .get_or_init(|| {
-            let model = crate::models::load(RECOGNITION, &format!("{PADDLE_URL}/rec.onnx"))?;
-            let dict = crate::models::get(DICT, &format!("{PADDLE_URL}/dict.txt"))?;
+            let model = crate::models::load(RECOGNITION, &format!("{PADDLE_URL}/rec.onnx"), RECOGNITION_SHA256)?;
+            let dict = crate::models::get(DICT, &format!("{PADDLE_URL}/dict.txt"), DICT_SHA256)?;
             let dict = std::fs::read_to_string(dict).map_err(|e| format!("{DICT}: {e}"))?;
             let chars = std::iter::once('\0')
                 .chain(dict.lines().filter_map(|l| l.chars().next()))

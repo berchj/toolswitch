@@ -55,6 +55,8 @@ impl FileJobs {
                 ctx.request_repaint();
                 // A broken file can make a library give up (panic); it fails alone, the rest go on.
                 let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(&file)));
+                // Models and big images are freed by now: return that memory to the system.
+                crate::models::give_back_memory();
                 let status = match outcome {
                     Ok(Ok((out, note))) => {
                         let picture = preview(&out);

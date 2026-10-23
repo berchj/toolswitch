@@ -4,10 +4,12 @@
 use rten_tensor::prelude::*;
 use rten_tensor::{NdTensor, Tensor};
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 const MODEL: &str = "BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx";
 const MODEL_URL: &str = "https://github.com/danielgatis/rembg/releases/download/v0.0.0/BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx";
+const MODEL_SHA256: &str = "5600024376f572a557870a5eb0afb1e5961636bef4e1e22132025467d0f03333";
 /// The model used before: much worse with light clothes; deleted to free its 170 MB.
 const OLD_MODEL: &str = "isnet-general-use.onnx";
 const SIZE: usize = 1024;
@@ -21,24 +23,28 @@ pub fn supported(path: &Path) -> bool {
 }
 
 fn model_path() -> Result<PathBuf, String> {
-    let path = crate::models::get(MODEL, MODEL_URL)?;
+    let path = crate::models::get(MODEL, MODEL_URL, MODEL_SHA256)?;
     let _ = std::fs::remove_file(crate::models::dir().join(OLD_MODEL));
     Ok(path)
 }
 
-/// Loaded once; one image at a time, so the memory stays at one run's worth.
-fn model() -> Result<&'static Mutex<rten::Model>, String> {
-    static MODEL_CELL: OnceLock<Result<Mutex<rten::Model>, String>> = OnceLock::new();
-    MODEL_CELL
-        .get_or_init(|| {
-            let path = model_path()?;
-            rten::Model::load_file(&path)
-                .map(Mutex::new)
-                .map_err(|e| format!("{MODEL}: {e}"))
-        })
-        .as_ref()
-        .map_err(Clone::clone)
+/// The model while it's in use, and when it last ran. It takes a few hundred MB, so it's let
+/// go after IDLE without use (see `release_if_idle`) and loaded again when needed.
+static LOADED: Mutex<Option<(rten::Model, Instant)>> = Mutex::new(None);
+const IDLE: Duration = Duration::from_secs(5 * 60);
+
+/// Called from the background thread every few seconds.
+pub fn release_if_idle() {
+    // Busy with an image: it's in use.
+    let Ok(mut loaded) = LOADED.try_lock() else {
+        return;
+    };
+    if loaded.as_ref().is_some_and(|(_, last)| last.elapsed() > IDLE) {
+        *loaded = None;
+        crate::models::give_back_memory();
+    }
 }
+
 
 /// The image the way people see it (phone photos are often stored sideways).
 fn open(path: &Path) -> Result<image::DynamicImage, String> {
@@ -76,15 +82,20 @@ fn mask(rgb: &image::RgbImage) -> Result<image::GrayImage, String> {
     }
     let input = Tensor::from_data(&[1, 3, SIZE, SIZE], input);
 
-    let model = model()?
-        .lock()
-        .map_err(|_| "The model crashed".to_string())?;
+    // One image at a time, so the memory stays at one run's worth.
+    let mut loaded = LOADED.lock().unwrap_or_else(|e| e.into_inner());
+    if loaded.is_none() {
+        let model = rten::Model::load_file(model_path()?).map_err(|e| format!("{MODEL}: {e}"))?;
+        *loaded = Some((model, Instant::now()));
+    }
+    let (model, last) = loaded.as_mut().ok_or("The model isn't loaded")?;
+    *last = Instant::now();
     let output: NdTensor<f32, 4> = model
         .run_one(input.view().into(), None)
         .map_err(|e| e.to_string())?
         .try_into()
         .map_err(|e: rten::TryFromValueError| e.to_string())?;
-    drop(model);
+    drop(loaded);
 
     // The model gives scores; the sigmoid turns them into 0..1.
     let pred: Vec<f32> = output.iter().map(|v| 1.0 / (1.0 + (-v).exp())).collect();
@@ -143,5 +154,21 @@ mod tests {
         let start = std::time::Instant::now();
         let out = super::remove_background(path.as_ref()).unwrap();
         println!("{} ({:?})", out.display(), start.elapsed());
+        println!("memory with the model: {}", rss());
+        // Pretend it's been idle long enough, then let it go.
+        if let Some((_, last)) = super::LOADED.lock().unwrap().as_mut() {
+            *last -= super::IDLE * 2;
+        }
+        super::release_if_idle();
+        println!("memory after letting it go: {}", rss());
+    }
+
+    fn rss() -> String {
+        std::fs::read_to_string("/proc/self/status")
+            .unwrap_or_default()
+            .lines()
+            .find(|l| l.starts_with("VmRSS"))
+            .unwrap_or_default()
+            .to_string()
     }
 }

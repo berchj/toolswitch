@@ -35,6 +35,7 @@ pub fn start(ctx: egui::Context, refresh_tray: impl Fn() + Send + 'static) {
                 turn(&|| crate::breaks::tick(woke_up));
             }
             turn(&crate::power::tick);
+            crate::cutout::release_if_idle();
             if config::enabled("monitor") {
                 turn(&crate::monitor::tick);
             }
