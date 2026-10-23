@@ -10,6 +10,8 @@ global-hotkey = "=0.8.0"
 arboard = { version = "=3.6.1", default-features = false, features = ["image-data"] }
 chrono = { version = "=0.4.45", default-features = false, features = ["clock", "std"] }
 color_quant = "=2.0.0"
+getrandom = "=0.3.4"
+sha2 = "=0.11.1"
 eframe = { version = "=0.36.2", default-features = false, features = ["glow", "x11", "wayland", "default_fonts"] }
 image = { version = "=0.25.10", default-features = false, features = ["jpeg", "png", "webp", "bmp"] }
 jpeg-encoder = "=0.7.1"

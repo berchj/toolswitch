@@ -21,6 +21,7 @@ pub const TOOLS: &[(&str, &str, &str)] = &[
     ("ocr", "toolswitch: text from screen", "Super+Shift+X"),
     ("cutout", "toolswitch: remove background", "Super+Shift+B"),
     ("reminders", "toolswitch: new reminder", "Super+Shift+R"),
+    ("calendar", "toolswitch: calendar", "Super+Shift+E"),
     ("sign", "toolswitch: sign PDF", "Super+Shift+S"),
     ("breaks", "toolswitch: breaks", "Super+Shift+P"),
     ("organize", "toolswitch: tidy downloads", "Super+Shift+O"),

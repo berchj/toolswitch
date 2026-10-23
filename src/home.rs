@@ -57,6 +57,14 @@ const GROUPS: &[(&str, &[ToolInfo])] = &[
                 shortcuts: &[("reminders", "New reminder")],
             },
             ToolInfo {
+                id: "calendar",
+                icon: "📅",
+                name: "Calendar",
+                description: "Your Google Calendar: today's events, new ones with guests, and a heads-up before each.",
+                screen: Some(Screen::Calendar),
+                shortcuts: &[("calendar", "Open")],
+            },
+            ToolInfo {
                 id: "breaks",
                 icon: "☕",
                 name: "Breaks",

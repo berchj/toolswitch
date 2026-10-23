@@ -10,10 +10,12 @@
 //   toolswitch cutout [files or folders]     remove their background
 //   toolswitch sign [PDF files]              sign them
 //   toolswitch reminders   open Reminders to add one
+//   toolswitch calendar    open today's Google Calendar events
 //   toolswitch jira        open the Jira issues assigned to you
 //   toolswitch wallpaper-next | wallpaper-prev | wallpaper-random
 
 mod backup;
+mod calendar_view;
 mod breaks;
 mod cleanup;
 mod clipboard;
@@ -24,6 +26,7 @@ mod config;
 mod cutout;
 mod cutout_view;
 mod desktop;
+mod gcal;
 mod home;
 mod instance;
 mod jira;
@@ -60,6 +63,7 @@ pub enum Tool {
     Cutout,
     Sign,
     Reminders,
+    Calendar,
     Breaks,
     Organize,
     Backup,
@@ -71,7 +75,7 @@ pub enum Tool {
 }
 
 impl Tool {
-    const ALL: [(Tool, &'static str); 15] = [
+    const ALL: [(Tool, &'static str); 16] = [
         (Tool::Clipboard, "clipboard"),
         (Tool::Wallpaper, "wallpaper"),
         (Tool::Compress, "compress"),
@@ -79,6 +83,7 @@ impl Tool {
         (Tool::Cutout, "cutout"),
         (Tool::Sign, "sign"),
         (Tool::Reminders, "reminders"),
+        (Tool::Calendar, "calendar"),
         (Tool::Breaks, "breaks"),
         (Tool::Organize, "organize"),
         (Tool::Backup, "backup"),
@@ -112,6 +117,7 @@ impl Tool {
             Tool::Cutout => Screen::Cutout,
             Tool::Sign => Screen::Sign,
             Tool::Reminders => Screen::Reminders,
+            Tool::Calendar => Screen::Calendar,
             Tool::Breaks => Screen::Breaks,
             Tool::Organize => Screen::Organize,
             Tool::Backup => Screen::Backup,
@@ -131,6 +137,7 @@ pub enum Screen {
     Clipboard,
     Wallpapers,
     Reminders,
+    Calendar,
     Breaks,
     Compress,
     Cutout,
@@ -182,6 +189,7 @@ const NAV: &[(&str, &[NavItem])] = &[
             (Screen::Clipboard, "📋", "Clipboard"),
             (Screen::Wallpapers, "🖼", "Wallpapers"),
             (Screen::Reminders, "⏰", "Reminders"),
+            (Screen::Calendar, "📅", "Calendar"),
             (Screen::Breaks, "☕", "Breaks"),
         ],
     ),
@@ -853,6 +861,7 @@ fn pages(ctx: &egui::Context) -> std::collections::HashMap<Screen, Box<dyn Page>
     pages.insert(Screen::Updates, Box::<updates::UpdatesPage>::default());
     pages.insert(Screen::Sign, Box::<sign::SignPage>::default());
     pages.insert(Screen::Jira, Box::<jira::JiraPage>::default());
+    pages.insert(Screen::Calendar, Box::new(calendar_view::CalendarPage::new()));
     for (screen, name) in [] {
         pages.insert(screen, Box::new(Placeholder(name)));
     }

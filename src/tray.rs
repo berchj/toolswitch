@@ -66,6 +66,14 @@ impl Tray {
                 None,
             ));
         }
+        if config::enabled("calendar")
+            && let Some(event) = crate::gcal::next()
+        {
+            menu.push(Entry::Item(
+                format!("📅 {} · {}", event.start.format("%H:%M"), label(&event.title)),
+                None,
+            ));
+        }
         if config::enabled("breaks") {
             menu.push(Entry::Item(format!("☕ {}", crate::breaks::status()), None));
             menu.push(item("Pause breaks for 1 hour".into(), Action::PauseBreaks));
@@ -87,6 +95,10 @@ impl Tray {
             item(
                 format!("New reminder… ({})", shortcuts::get("reminders")),
                 show(Tool::Reminders),
+            ),
+            item(
+                format!("Calendar ({})", shortcuts::get("calendar")),
+                show(Tool::Calendar),
             ),
             item(
                 format!("Copy text from screen ({})", shortcuts::get("ocr")),

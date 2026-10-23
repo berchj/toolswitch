@@ -21,7 +21,7 @@ pub struct Config {
 }
 
 /// Tools that move or delete files, or interrupt you, start turned off.
-pub const OFF_BY_DEFAULT: &[&str] = &["organize", "backup", "breaks", "jira"];
+pub const OFF_BY_DEFAULT: &[&str] = &["organize", "backup", "breaks", "jira", "calendar"];
 
 pub fn enabled(tool: &str) -> bool {
     let config = load();
