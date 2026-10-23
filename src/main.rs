@@ -48,6 +48,7 @@ mod shortcut_editor;
 mod shortcuts;
 mod sign;
 mod sound;
+mod support;
 mod theme;
 mod transcribe;
 mod transcribe_view;
@@ -108,8 +109,12 @@ impl Tool {
         Self::ALL.iter().find(|t| t.0 == self).map_or("", |t| t.1)
     }
 
+    /// Hidden tools can't be opened from a shortcut or the command line either.
     fn from_arg(arg: &str) -> Option<Self> {
-        Self::ALL.iter().find(|t| t.1 == arg).map(|t| t.0)
+        Self::ALL
+            .iter()
+            .find(|t| t.1 == arg && !config::hidden(t.1))
+            .map(|t| t.0)
     }
 
     /// Tools that take files from the command line (the right-click menu).
@@ -166,6 +171,8 @@ pub enum Screen {
     Updates,
     Security,
     Jira,
+    /// Donations: Cafecito and USDT.
+    Support,
     /// The full-screen screenshot to select text on.
     Ocr,
     /// The small window with the text read.
@@ -233,6 +240,13 @@ const NAV: &[(&str, &[NavItem])] = &[
     ),
     ("WORK", &[(Screen::Jira, "☑", "Jira")]),
 ];
+
+/// The screen belongs to a hidden tool.
+fn screen_hidden(screen: Screen) -> bool {
+    Tool::ALL
+        .iter()
+        .any(|&(tool, id)| tool.screen() == screen && config::hidden(id))
+}
 
 /// A second launch's command line, as one line for the socket: fields separated by tabs.
 fn to_line(args: &[String]) -> String {
@@ -567,6 +581,9 @@ impl App {
                         // Compact, so every tool fits without scrolling.
                         ui.spacing_mut().item_spacing.y = 1.0;
                         for (group, items) in NAV {
+                            if items.iter().all(|item| screen_hidden(item.0)) {
+                                continue;
+                            }
                             if !group.is_empty() {
                                 ui.add_space(5.0);
                                 ui.horizontal(|ui| {
@@ -577,6 +594,9 @@ impl App {
                                 });
                             }
                             for &(screen, icon, name) in *items {
+                                if screen_hidden(screen) {
+                                    continue;
+                                }
                                 if nav_item(ui, icon, name, self.screen == screen, true).clicked()
                                     && self.screen != screen
                                 {
@@ -611,6 +631,11 @@ impl App {
                         );
                     });
                     ui.add_space(4.0);
+                    let support = self.screen == Screen::Support;
+                    if nav_item(ui, "♥", "Support toolswitch", support, true).clicked() && !support {
+                        self.open_tab(Screen::Support);
+                    }
+                    ui.add_space(2.0);
                     ui.separator();
                 });
             });
@@ -885,6 +910,7 @@ fn pages(ctx: &egui::Context) -> std::collections::HashMap<Screen, Box<dyn Page>
     );
     pages.insert(Screen::Jira, Box::<jira::JiraPage>::default());
     pages.insert(Screen::Security, Box::<security::SecurityPage>::default());
+    pages.insert(Screen::Support, Box::<support::SupportPage>::default());
     pages.insert(Screen::Calendar, Box::new(calendar_view::CalendarPage::new()));
     for (screen, name) in [] {
         pages.insert(screen, Box::new(Placeholder(name)));

@@ -97,15 +97,20 @@ impl Tray {
                 show(Tool::Reminders),
             ),
             item(
-                format!("Calendar ({})", shortcuts::get("calendar")),
-                show(Tool::Calendar),
-            ),
-            item(
                 format!("Copy text from screen ({})", shortcuts::get("ocr")),
                 show(Tool::Ocr),
             ),
             Entry::Separator,
         ]);
+        if !config::hidden("calendar") {
+            menu.insert(
+                menu.len() - 2,
+                item(
+                    format!("Calendar ({})", shortcuts::get("calendar")),
+                    show(Tool::Calendar),
+                ),
+            );
+        }
 
         menu.extend([
             Entry::Check(

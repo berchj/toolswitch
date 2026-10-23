@@ -185,6 +185,11 @@ const GROUPS: &[(&str, &[ToolInfo])] = &[
     ),
 ];
 
+/// The group's tools that aren't hidden (see config::HIDDEN).
+fn shown(tools: &'static [ToolInfo]) -> Vec<&'static ToolInfo> {
+    tools.iter().filter(|t| !config::hidden(t.id)).collect()
+}
+
 /// A small card for the welcome screen. Returns true if its switch changed.
 fn tile(ui: &mut egui::Ui, tool: &ToolInfo) -> bool {
     let mut changed = false;
@@ -247,10 +252,14 @@ impl Home {
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 for (group, tools) in GROUPS {
+                    let tools = shown(tools);
+                    if tools.is_empty() {
+                        continue;
+                    }
                     ui.add_space(6.0);
                     ui.label(egui::RichText::new(*group).size(13.0).color(theme::FAINT));
                     ui.add_space(4.0);
-                    for tool in *tools {
+                    for tool in tools {
                         self.card(ui, tool, &mut action);
                         ui.add_space(8.0);
                     }
@@ -285,12 +294,16 @@ impl Home {
                 // Room for the scroll bar on the right.
                 ui.set_max_width(ui.available_width() - 12.0);
                 for (group, tools) in GROUPS {
+                    let tools = shown(tools);
+                    if tools.is_empty() {
+                        continue;
+                    }
                     ui.label(egui::RichText::new(*group).size(13.0).color(theme::FAINT));
                     ui.add_space(4.0);
                     // Two tiles per row.
                     for pair in tools.chunks(2) {
                         ui.columns(2, |cols| {
-                            for (col, tool) in cols.iter_mut().zip(pair) {
+                            for (col, &tool) in cols.iter_mut().zip(pair) {
                                 changed |= tile(col, tool);
                             }
                         });

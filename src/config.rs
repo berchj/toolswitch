@@ -23,7 +23,19 @@ pub struct Config {
 /// Tools that move or delete files, or interrupt you, start turned off.
 pub const OFF_BY_DEFAULT: &[&str] = &["organize", "backup", "breaks", "jira", "calendar"];
 
+/// Tools taken out of the app for now: not shown anywhere and never running. Their code stays.
+pub const HIDDEN: &[&str] = &[
+    "calendar", "jira", "security", "updates", "backup", "cleanup", "organize", "monitor",
+];
+
+pub fn hidden(tool: &str) -> bool {
+    HIDDEN.contains(&tool)
+}
+
 pub fn enabled(tool: &str) -> bool {
+    if hidden(tool) {
+        return false;
+    }
     let config = load();
     if OFF_BY_DEFAULT.contains(&tool) {
         config.enabled.contains(tool)
