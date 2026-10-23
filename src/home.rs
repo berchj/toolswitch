@@ -162,6 +162,14 @@ const GROUPS: &[(&str, &[ToolInfo])] = &[
                 screen: Some(Screen::Updates),
                 shortcuts: &[("updates", "Open")],
             },
+            ToolInfo {
+                id: "security",
+                icon: "🛡",
+                name: "Security check",
+                description: "Finds what's risky in how this computer is set up and how to fix it. Claude can write the plan.",
+                screen: Some(Screen::Security),
+                shortcuts: &[("security", "Open")],
+            },
         ],
     ),
     (

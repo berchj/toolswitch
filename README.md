@@ -45,6 +45,7 @@ On Linux, Compress, Remove background, Sign PDF and Audio to text are also in th
 | Watch the PC | Warns when a disk is almost full or a program keeps the processor or memory busy; close it with a click. |
 | Shut down timer | Shut down, restart or sleep in a while, at a time, or when the downloads finish. |
 | Updates | Updates the system and apps with one click: apt, dnf, pacman, Flatpak, Snap, winget, Homebrew, Software Update. Checks once a day. |
+| Security check | Looks at the firewall, open ports, pending updates, screen lock, disk encryption, SSH and files with keys, and says what's risky and how to fix it (with the command to copy). Optional: with an Anthropic API key, Claude writes a plan for this computer from the results (only the list of findings is sent). |
 
 **Work**
 
@@ -59,7 +60,7 @@ Every shortcut can be changed in the Tools screen: click the keys and press new 
 ```
 toolswitch                    open the window
 toolswitch --hidden           start in the tray only (used at login)
-toolswitch clipboard | ocr | reminders | calendar | wallpaper | jira | (any tool id)
+toolswitch clipboard | ocr | reminders | calendar | wallpaper | security | jira | (any tool id)
 toolswitch wallpaper-next | wallpaper-prev | wallpaper-random
 toolswitch compress | cutout | sign | transcribe  [files or folders]
 ```

@@ -13,6 +13,7 @@
 //   toolswitch reminders   open Reminders to add one
 //   toolswitch calendar    open today's Google Calendar events
 //   toolswitch jira        open the Jira issues assigned to you
+//   toolswitch security    check this computer's security
 //   toolswitch wallpaper-next | wallpaper-prev | wallpaper-random
 
 mod audio;
@@ -41,6 +42,7 @@ mod organize;
 mod power;
 mod reminders;
 mod screen;
+mod security;
 mod services;
 mod shortcut_editor;
 mod shortcuts;
@@ -76,11 +78,12 @@ pub enum Tool {
     Monitor,
     Power,
     Updates,
+    Security,
     Jira,
 }
 
 impl Tool {
-    const ALL: [(Tool, &'static str); 17] = [
+    const ALL: [(Tool, &'static str); 18] = [
         (Tool::Clipboard, "clipboard"),
         (Tool::Wallpaper, "wallpaper"),
         (Tool::Compress, "compress"),
@@ -97,6 +100,7 @@ impl Tool {
         (Tool::Monitor, "monitor"),
         (Tool::Power, "power"),
         (Tool::Updates, "updates"),
+        (Tool::Security, "security"),
         (Tool::Jira, "jira"),
     ];
 
@@ -135,6 +139,7 @@ impl Tool {
             Tool::Monitor => Screen::Monitor,
             Tool::Power => Screen::Power,
             Tool::Updates => Screen::Updates,
+            Tool::Security => Screen::Security,
             Tool::Jira => Screen::Jira,
         }
     }
@@ -159,6 +164,7 @@ pub enum Screen {
     Monitor,
     Power,
     Updates,
+    Security,
     Jira,
     /// The full-screen screenshot to select text on.
     Ocr,
@@ -222,6 +228,7 @@ const NAV: &[(&str, &[NavItem])] = &[
             (Screen::Monitor, "📈", "Watch the PC"),
             (Screen::Power, "🔌", "Shut down timer"),
             (Screen::Updates, "⟳", "Updates"),
+            (Screen::Security, "🛡", "Security check"),
         ],
     ),
     ("WORK", &[(Screen::Jira, "☑", "Jira")]),
@@ -623,7 +630,7 @@ fn nav_item(
     } else {
         egui::Sense::hover()
     };
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 24.0), sense);
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 22.0), sense);
     let hover = ui
         .ctx()
         .animate_bool(response.id, enabled && response.hovered());
@@ -877,6 +884,7 @@ fn pages(ctx: &egui::Context) -> std::collections::HashMap<Screen, Box<dyn Page>
         Box::<transcribe_view::TranscribePage>::default(),
     );
     pages.insert(Screen::Jira, Box::<jira::JiraPage>::default());
+    pages.insert(Screen::Security, Box::<security::SecurityPage>::default());
     pages.insert(Screen::Calendar, Box::new(calendar_view::CalendarPage::new()));
     for (screen, name) in [] {
         pages.insert(screen, Box::new(Placeholder(name)));

@@ -31,6 +31,7 @@ pub const TOOLS: &[(&str, &str, &str)] = &[
     ("monitor", "toolswitch: watch the PC", "Super+Shift+M"),
     ("power", "toolswitch: shut down timer", "Super+Shift+Q"),
     ("updates", "toolswitch: updates", "Super+Shift+U"),
+    ("security", "toolswitch: security check", "Super+Shift+G"),
     ("jira", "toolswitch: Jira issues", "Super+Shift+J"),
     (
         "wallpaper-random",
