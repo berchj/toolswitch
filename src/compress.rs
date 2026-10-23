@@ -80,9 +80,33 @@ pub fn supported(path: &Path) -> bool {
     IMAGE_EXTS.contains(&e.as_str()) || DOC_EXTS.contains(&e.as_str())
 }
 
-/// Files and folders (searched recursively) -> the files that can be compressed.
-pub fn collect(paths: &[PathBuf]) -> Vec<PathBuf> {
-    crate::jobs::collect(paths, supported)
+/// Files and folders (searched recursively) -> the files that can be compressed. Inside a
+/// folder, the results of an earlier run (photo-min.jpg) are left out: compressing a folder
+/// twice shouldn't make photo-min-min.jpg.
+pub fn collect(paths: &[PathBuf], suffix: &str) -> Vec<PathBuf> {
+    let suffix = if suffix.is_empty() { "-min" } else { suffix };
+    let earlier = |file: &Path| {
+        let stem = file.file_stem().unwrap_or_default().to_string_lossy();
+        // "-min", or "-min-2" when that name was taken.
+        let stem = stem.trim_end_matches(|c: char| c.is_ascii_digit());
+        let stem = if stem.len() < file.file_stem().unwrap_or_default().len() {
+            stem.strip_suffix('-').unwrap_or(stem)
+        } else {
+            stem
+        };
+        stem.ends_with(suffix)
+    };
+    let mut out = vec![];
+    for path in paths {
+        let found = crate::jobs::collect(std::slice::from_ref(path), supported);
+        if path.is_dir() {
+            out.extend(found.into_iter().filter(|f| !earlier(f)));
+        } else {
+            out.extend(found);
+        }
+    }
+    out.dedup();
+    out
 }
 
 /// photo.jpg -> photo-min.jpg, or photo-min-2.jpg if that exists. Never the original.
@@ -333,7 +357,16 @@ fn compress_pdf(file: &Path, settings: &Settings) -> Result<Outcome, String> {
     use lopdf::Object;
     let data = std::fs::read(file).map_err(|e| e.to_string())?;
     let before = data.len() as u64;
-    let mut doc = lopdf::Document::load_mem(&data).map_err(|e| e.to_string())?;
+    let mut doc = lopdf::Document::load_mem(&data)
+        .map_err(|_| "Couldn't open it: the PDF looks damaged or has a password".to_string())?;
+
+    // Transparency masks are left as they are: JPEG noise on their edges shows.
+    let masks: std::collections::HashSet<lopdf::ObjectId> = doc
+        .objects
+        .values()
+        .filter_map(|o| o.as_stream().ok())
+        .filter_map(|s| s.dict.get(b"SMask").and_then(Object::as_reference).ok())
+        .collect();
 
     let mut replaced = vec![];
     for (id, object) in &doc.objects {
@@ -341,48 +374,43 @@ fn compress_pdf(file: &Path, settings: &Settings) -> Result<Outcome, String> {
             continue;
         };
         let dict = &stream.dict;
-        let name = |key: &[u8]| dict.get(key).ok().and_then(|o| o.as_name().ok());
-        if name(b"Subtype") != Some(b"Image")
+        if masks.contains(id)
+            || dict.get(b"Subtype").and_then(Object::as_name).ok() != Some(b"Image")
             || dict.has(b"Mask")
             || dict.has(b"Decode")
-            || dict.has(b"SMask")
+            || dict.has(b"ImageMask")
         {
             continue;
         }
-        let is_jpeg = match dict.get(b"Filter") {
-            Ok(Object::Name(n)) => n == b"DCTDecode",
-            Ok(Object::Array(a)) => a.len() == 1 && a[0].as_name().ok() == Some(b"DCTDecode"),
-            _ => false,
-        };
-        let gray = match name(b"ColorSpace") {
-            Some(b"DeviceRGB") => false,
-            Some(b"DeviceGray") => true,
-            _ => continue,
-        };
-        if !is_jpeg {
-            continue;
-        }
-        let Ok(image) = open(&stream.content) else {
+        let Some(gray) = gray_or_rgb(&doc, dict.get(b"ColorSpace").ok()) else {
             continue;
         };
-        if image.color().has_color() == gray {
-            continue;
-        }
-        let image = shrink(image, settings.max_width);
-        let image = if gray {
-            DynamicImage::ImageLuma8(image.to_luma8())
+        let filters = stream.filters().unwrap_or_default();
+        let (image, original) = if filters == [b"DCTDecode".as_slice()] {
+            let Ok(image) = open(&stream.content) else {
+                continue;
+            };
+            if image.color().has_color() == gray {
+                continue;
+            }
+            (image, stream.content.len())
+        } else if filters.is_empty() || filters == [b"FlateDecode".as_slice()] {
+            // Raw pixels, as in PDFs made from Word or screenshots: as a JPEG only when it
+            // pays off a lot, which is photos. Text and drawings stay sharp.
+            match raw_image(stream, gray) {
+                Some(image) => (image, stream.content.len() / 2),
+                None => continue,
+            }
         } else {
-            image
+            continue;
         };
+        let image = shrink(image, settings.max_width);
         let Ok(out) = encode_jpeg(&image, settings.quality) else {
             continue;
         };
-        if (out.len() as f64) < stream.content.len() as f64 * WORTH_IT {
+        if (out.len() as f64) < original as f64 * WORTH_IT {
             replaced.push((*id, out, image.width(), image.height()));
         }
-    }
-    if replaced.is_empty() {
-        return Ok(skipped(before));
     }
     for (id, out, width, height) in replaced {
         if let Some(Object::Stream(stream)) = doc.objects.get_mut(&id) {
@@ -397,12 +425,65 @@ fn compress_pdf(file: &Path, settings: &Settings) -> Result<Outcome, String> {
             stream.set_content(out);
         }
     }
+    // The rest of the file: leftovers nothing points to, uncompressed text and drawings,
+    // and the small objects packed together.
+    doc.prune_objects();
+    doc.compress();
     let mut out = vec![];
-    doc.save_to(&mut out).map_err(|e| e.to_string())?;
+    doc.save_modern(&mut out).map_err(|e| e.to_string())?;
     if out.len() as f64 > before as f64 * WORTH_IT {
         return Ok(skipped(before));
     }
     write(file, "pdf", settings, &out, before)
+}
+
+/// Some(true) for gray, Some(false) for RGB, None for anything else (CMYK, palettes...).
+/// ICC profiles count by their number of channels: they stay in place for the new JPEG.
+fn gray_or_rgb(doc: &lopdf::Document, space: Option<&lopdf::Object>) -> Option<bool> {
+    use lopdf::Object;
+    let space = match space? {
+        Object::Reference(id) => doc.get_object(*id).ok()?,
+        other => other,
+    };
+    match space {
+        Object::Name(n) if n == b"DeviceRGB" => Some(false),
+        Object::Name(n) if n == b"DeviceGray" => Some(true),
+        Object::Array(a) if a.len() == 2 && a[0].as_name().ok() == Some(b"ICCBased") => {
+            let profile = doc.get_object(a[1].as_reference().ok()?).ok()?.as_stream().ok()?;
+            match profile.dict.get(b"N").and_then(Object::as_i64).ok()? {
+                1 => Some(true),
+                3 => Some(false),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+/// An 8-bit image stored as raw (or zip-compressed) pixels.
+fn raw_image(stream: &lopdf::Stream, gray: bool) -> Option<DynamicImage> {
+    use lopdf::Object;
+    let int = |key: &[u8]| stream.dict.get(key).and_then(Object::as_i64).ok();
+    if int(b"BitsPerComponent")? != 8 {
+        return None;
+    }
+    let (w, h) = (u32::try_from(int(b"Width")?).ok()?, u32::try_from(int(b"Height")?).ok()?);
+    // Small ones (icons, logos) aren't worth it.
+    if (w as u64) * (h as u64) < 100_000 {
+        return None;
+    }
+    let channels = if gray { 1 } else { 3 };
+    let pixels = stream
+        .decompressed_content_with_limit(w as usize * h as usize * channels + 1)
+        .ok()?;
+    if pixels.len() != w as usize * h as usize * channels {
+        return None;
+    }
+    if gray {
+        image::GrayImage::from_raw(w, h, pixels).map(DynamicImage::ImageLuma8)
+    } else {
+        image::RgbImage::from_raw(w, h, pixels).map(DynamicImage::ImageRgb8)
+    }
 }
 
 pub fn format_size(bytes: u64) -> String {
@@ -423,7 +504,7 @@ mod tests {
     fn compress_folder() {
         let dir = std::env::var("COMPRESS_TEST_DIR").expect("COMPRESS_TEST_DIR");
         let settings = super::Settings::default();
-        for file in super::collect(&[dir.into()]) {
+        for file in super::collect(&[dir.into()], &settings.suffix) {
             let start = std::time::Instant::now();
             match super::compress(&file, &settings) {
                 Ok(o) => println!(

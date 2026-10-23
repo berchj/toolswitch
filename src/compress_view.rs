@@ -69,7 +69,7 @@ impl CompressView {
 
     /// Files from a drop, the file chooser, the right-click menu or the command line.
     pub fn add(&mut self, paths: &[PathBuf]) {
-        for file in compress::collect(paths) {
+        for file in compress::collect(paths, &self.settings.suffix) {
             let id = self.next_id;
             self.next_id += 1;
             let _ = self.work.send((id, file.clone(), self.settings.clone()));
