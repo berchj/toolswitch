@@ -71,7 +71,29 @@ fn home() -> PathBuf {
 
 // ---------- start at login ----------
 
-pub use autostart::{autostart_enabled, set_autostart};
+/// Start at login, as last read or set. Asking the system costs a process on Windows (reg),
+/// and the window asks every frame, so the answer is kept: -1 unknown, 0 off, 1 on.
+static AUTOSTART: std::sync::atomic::AtomicI8 = std::sync::atomic::AtomicI8::new(-1);
+
+pub fn autostart_enabled() -> bool {
+    use std::sync::atomic::Ordering;
+    match AUTOSTART.load(Ordering::Relaxed) {
+        -1 => {
+            let on = autostart::autostart_enabled();
+            AUTOSTART.store(on as i8, Ordering::Relaxed);
+            on
+        }
+        known => known == 1,
+    }
+}
+
+pub fn set_autostart(on: bool) -> std::io::Result<()> {
+    use std::sync::atomic::Ordering;
+    let result = autostart::set_autostart(on);
+    // On failure, ask the system again next time.
+    AUTOSTART.store(if result.is_ok() { on as i8 } else { -1 }, Ordering::Relaxed);
+    result
+}
 
 #[cfg(all(unix, not(target_os = "macos")))]
 mod autostart {
