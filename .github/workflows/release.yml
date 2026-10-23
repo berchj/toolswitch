@@ -1,7 +1,7 @@
 name: Release
 
 # Builds the toolswitch installers for Linux (.deb and .tar.gz), Windows (setup .exe) and macOS
-# (.dmg, Apple Silicon and Intel) and attaches them to the GitHub release of the tag.
+# (.dmg, Apple Silicon and Intel) and publishes them in the public berchj/toolswitch-releases.
 on:
   push:
     tags: ['v*']
@@ -98,10 +98,14 @@ jobs:
         with:
           path: files
           merge-multiple: true
-      - name: Attach to the release
+      # The code is private; the installers go to the public berchj/toolswitch-releases, which
+      # the website links to. RELEASE_TOKEN: a fine-grained token with Contents read and write
+      # on that repository only.
+      - name: Publish in toolswitch-releases
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_REPO: berchj/toolswitch-releases
         run: |
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "$TAG" --generate-notes
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "toolswitch ${TAG#v}" \
+            --notes "Download the file for your system: .deb (Ubuntu, Debian, Mint), .tar.gz (other Linux), setup .exe (Windows), .dmg (Mac: arm64 for Apple chips, x86_64 for Intel). More at https://berchj.github.io/toolswitch/"
           gh release upload "$TAG" files/* --clobber
