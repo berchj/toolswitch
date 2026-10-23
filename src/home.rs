@@ -102,6 +102,14 @@ const GROUPS: &[(&str, &[ToolInfo])] = &[
                 shortcuts: &[("sign", "Open")],
             },
             ToolInfo {
+                id: "transcribe",
+                icon: "🎤",
+                name: "Audio to text",
+                description: "Turns voice notes, recordings and videos into text, offline. Also from the right-click menu.",
+                screen: Some(Screen::Transcribe),
+                shortcuts: &[("transcribe", "Open")],
+            },
+            ToolInfo {
                 id: "organize",
                 icon: "📂",
                 name: "Tidy downloads",

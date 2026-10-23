@@ -223,6 +223,7 @@ pub fn ensure_nautilus_scripts() {
         ("Compress with toolswitch", "compress"),
         ("Remove background with toolswitch", "cutout"),
         ("Sign PDF with toolswitch", "sign"),
+        ("Audio to text with toolswitch", "transcribe"),
     ] {
         if let Err(error) = nautilus_script(name, tool) {
             eprintln!("Could not add \"{name}\" to the right-click menu: {error}");

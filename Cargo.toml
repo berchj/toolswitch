@@ -21,6 +21,11 @@ png = "=0.18.1"
 rfd = { version = "=0.17.2", default-features = false, features = ["xdg-portal", "pollster"] }
 rten = { version = "=0.26.0", default-features = false, features = ["onnx_format"] }
 rten-tensor = "=0.26.0"
+rten-generate = "=0.26.0"
+rten-text = "=0.26.0"
+rustfft = "=6.4.1"
+opus-decoder = "=0.1.1"
+symphonia = { version = "=0.5.5", default-features = false, features = ["aac", "adpcm", "alac", "flac", "isomp4", "mkv", "mp3", "ogg", "pcm", "vorbis", "wav"] }
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.151"
 sysinfo = { version = "=0.39.6", default-features = false, features = ["system", "disk"] }
@@ -66,6 +71,16 @@ opt-level = 3
 [profile.release.package.rten-gemm]
 opt-level = 3
 [profile.release.package.rten-base]
+opt-level = 3
+[profile.release.package.rten-generate]
+opt-level = 3
+[profile.release.package.rustfft]
+opt-level = 3
+[profile.release.package.opus-decoder]
+opt-level = 3
+[profile.release.package.symphonia-codec-aac]
+opt-level = 3
+[profile.release.package.symphonia-bundle-mp3]
 opt-level = 3
 [profile.release.package.rten-imageproc]
 opt-level = 3

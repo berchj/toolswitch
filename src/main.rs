@@ -9,11 +9,13 @@
 //   toolswitch compress [files or folders]   compress them (the right-click menu runs this)
 //   toolswitch cutout [files or folders]     remove their background
 //   toolswitch sign [PDF files]              sign them
+//   toolswitch transcribe [audio or video files]   turn their speech into text
 //   toolswitch reminders   open Reminders to add one
 //   toolswitch calendar    open today's Google Calendar events
 //   toolswitch jira        open the Jira issues assigned to you
 //   toolswitch wallpaper-next | wallpaper-prev | wallpaper-random
 
+mod audio;
 mod backup;
 mod calendar_view;
 mod breaks;
@@ -45,6 +47,8 @@ mod shortcuts;
 mod sign;
 mod sound;
 mod theme;
+mod transcribe;
+mod transcribe_view;
 mod tray;
 mod updates;
 mod wallpaper;
@@ -62,6 +66,7 @@ pub enum Tool {
     Ocr,
     Cutout,
     Sign,
+    Transcribe,
     Reminders,
     Calendar,
     Breaks,
@@ -75,13 +80,14 @@ pub enum Tool {
 }
 
 impl Tool {
-    const ALL: [(Tool, &'static str); 16] = [
+    const ALL: [(Tool, &'static str); 17] = [
         (Tool::Clipboard, "clipboard"),
         (Tool::Wallpaper, "wallpaper"),
         (Tool::Compress, "compress"),
         (Tool::Ocr, "ocr"),
         (Tool::Cutout, "cutout"),
         (Tool::Sign, "sign"),
+        (Tool::Transcribe, "transcribe"),
         (Tool::Reminders, "reminders"),
         (Tool::Calendar, "calendar"),
         (Tool::Breaks, "breaks"),
@@ -104,7 +110,10 @@ impl Tool {
 
     /// Tools that take files from the command line (the right-click menu).
     fn takes_files(self) -> bool {
-        matches!(self, Tool::Compress | Tool::Cutout | Tool::Sign)
+        matches!(
+            self,
+            Tool::Compress | Tool::Cutout | Tool::Sign | Tool::Transcribe
+        )
     }
 
     /// The screen it opens in the main window.
@@ -116,6 +125,7 @@ impl Tool {
             Tool::Ocr => Screen::Home,
             Tool::Cutout => Screen::Cutout,
             Tool::Sign => Screen::Sign,
+            Tool::Transcribe => Screen::Transcribe,
             Tool::Reminders => Screen::Reminders,
             Tool::Calendar => Screen::Calendar,
             Tool::Breaks => Screen::Breaks,
@@ -142,6 +152,7 @@ pub enum Screen {
     Compress,
     Cutout,
     Sign,
+    Transcribe,
     Organize,
     Backup,
     Cleanup,
@@ -199,6 +210,7 @@ const NAV: &[(&str, &[NavItem])] = &[
             (Screen::Compress, "📦", "Compress"),
             (Screen::Cutout, "✂", "Remove background"),
             (Screen::Sign, "✒", "Sign PDF"),
+            (Screen::Transcribe, "🎤", "Audio to text"),
             (Screen::Organize, "📂", "Tidy downloads"),
             (Screen::Backup, "💾", "Backup"),
         ],
@@ -860,6 +872,10 @@ fn pages(ctx: &egui::Context) -> std::collections::HashMap<Screen, Box<dyn Page>
     pages.insert(Screen::Backup, Box::<backup::BackupPage>::default());
     pages.insert(Screen::Updates, Box::<updates::UpdatesPage>::default());
     pages.insert(Screen::Sign, Box::<sign::SignPage>::default());
+    pages.insert(
+        Screen::Transcribe,
+        Box::<transcribe_view::TranscribePage>::default(),
+    );
     pages.insert(Screen::Jira, Box::<jira::JiraPage>::default());
     pages.insert(Screen::Calendar, Box::new(calendar_view::CalendarPage::new()));
     for (screen, name) in [] {
