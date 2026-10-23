@@ -13,11 +13,10 @@ does nothing at all.
 
 | Tool | What it does | Shortcut (Linux · Windows · macOS) |
 |---|---|---|
-| Clipboard history | Keeps what you copy; search it and paste an old text. Pin the ones you use often. | Super+Shift+V · Ctrl+Alt+V · Cmd+Option+V |
+| Clipboard history | Keeps the texts and images you copy; search them and paste an old one. Pin the ones you use often. | Super+Shift+V · Ctrl+Alt+V · Cmd+Option+V |
 | Text from screen | Select part of the screen and copy the text in it (OCR, accents and ñ included, 30+ Latin-script languages). | Super+Shift+X · Ctrl+Alt+X · Cmd+Option+X |
 | Wallpapers | Pick your wallpapers, switch them with a shortcut or every few minutes. | Super+Shift+W, Super+W (random), Super+. / Super+, |
 | Reminders | Write "in 20 min call Juan" or "at 15:30 meeting" (English or Spanish). | Super+Shift+R · Ctrl+Alt+R · Cmd+Option+R |
-| Calendar | Your Google Calendar: today's events, new ones with guests, and a notification 10 minutes before each. Off by default. | Super+Shift+E · Ctrl+Alt+E · Cmd+Option+E |
 | Breaks | Reminds you to rest your eyes (20-20-20) or works as a Pomodoro timer. | |
 
 Reminders and Breaks can play a short sound with their notifications (on by default, each can be
@@ -31,8 +30,6 @@ turned off).
 | Remove background | Transparent PNG of any photo, with an AI model (downloaded once, 220 MB). |
 | Sign PDF | Draw your signature once; drop PDFs, drag the signature to its place on the page and get name-signed.pdf. |
 | Audio to text | Voice notes, recordings and videos (MP3, M4A, Opus, OGG, WAV, FLAC, MP4, MKV, WebM) into text, offline, in ~100 languages, with Whisper (base 77 MB or small 250 MB, downloaded once). |
-| Tidy downloads | Moves downloads to Documents, Pictures, Videos... by type. Every move can be undone. Off by default. |
-| Backup | Copies the folders you pick to another disk every day. Only what changed; nothing is deleted there. Off by default. |
 
 On Linux, Compress, Remove background, Sign PDF and Audio to text are also in the Files right-click menu
 (Scripts).
@@ -41,17 +38,7 @@ On Linux, Compress, Remove background, Sign PDF and Audio to text are also in th
 
 | Tool | What it does |
 |---|---|
-| Clean up | Shows the trash, app caches, old downloads and big files, and frees them (to the trash when possible). |
-| Watch the PC | Warns when a disk is almost full or a program keeps the processor or memory busy; close it with a click. |
 | Shut down timer | Shut down, restart or sleep in a while, at a time, or when the downloads finish. |
-| Updates | Updates the system and apps with one click: apt, dnf, pacman, Flatpak, Snap, winget, Homebrew, Software Update. Checks once a day. |
-| Security check | Looks at the firewall, open ports, pending updates, screen lock, disk encryption, SSH and files with keys, and says what's risky and how to fix it (with the command to copy). Optional: with an Anthropic API key, Claude writes a plan for this computer from the results (only the list of findings is sent). |
-
-**Work**
-
-| Tool | What it does |
-|---|---|
-| Jira | The Jira Cloud issues assigned to you that aren't done, and a notification when you get a new one. Connect it with your site, email and an API token (kept in a file only you can read). Off by default. |
 
 Every shortcut can be changed in the Tools screen: click the keys and press new ones.
 
@@ -60,7 +47,7 @@ Every shortcut can be changed in the Tools screen: click the keys and press new 
 ```
 toolswitch                    open the window
 toolswitch --hidden           start in the tray only (used at login)
-toolswitch clipboard | ocr | reminders | calendar | wallpaper | security | jira | (any tool id)
+toolswitch clipboard | ocr | reminders | wallpaper | breaks | (any tool id)
 toolswitch wallpaper-next | wallpaper-prev | wallpaper-random
 toolswitch compress | cutout | sign | transcribe  [files or folders]
 ```
@@ -119,6 +106,17 @@ CUTOUT_TEST_IMAGE=photo.jpg    cargo test --release cutout_image -- --ignored --
 SIGN_TEST_PDF=file.pdf         cargo test --release sign_a_pdf -- --ignored --nocapture
 COMPRESS_TEST_DIR=some/folder  cargo test --release compress_folder -- --ignored --nocapture
 ```
+
+## Support toolswitch
+
+toolswitch is free and made by one person in their spare time. If it saves you time, you can
+buy me a coffee (also from the app: **Support toolswitch**, at the bottom of the sidebar):
+
+- ☕ **Cafecito** (from Argentina, in pesos): [cafecito.app/berchj](https://cafecito.app/berchj)
+- 💵 **USDT** (from anywhere): `0xc39dfD297BAf6ab305e267D153bf11d37de7faF6`
+
+> ⚠️ Send USDT **only on the BNB Smart Chain (BEP20) network**. Funds sent on any other network
+> (Ethereum, Tron, Polygon…) will be lost.
 
 ## License
 
