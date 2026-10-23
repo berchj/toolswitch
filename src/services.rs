@@ -1,5 +1,5 @@
 // The tools that work by themselves (reminders, breaks, the shut down timer, watching the PC,
-// tidying downloads, backups, updates) share one background thread that wakes up every few
+// tidying downloads, backups, updates, Jira) share one background thread that wakes up every few
 // seconds and gives each turned-on tool a turn. Nothing else runs while they have nothing to do.
 
 use crate::config;
@@ -43,6 +43,9 @@ pub fn start(ctx: egui::Context, refresh_tray: impl Fn() + Send + 'static) {
             }
             if config::enabled("updates") {
                 turn(&crate::updates::tick);
+            }
+            if config::enabled("jira") {
+                turn(&crate::jira::tick);
             }
             if changed {
                 ctx.request_repaint();

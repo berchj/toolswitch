@@ -10,6 +10,7 @@
 //   toolswitch cutout [files or folders]     remove their background
 //   toolswitch sign [PDF files]              sign them
 //   toolswitch reminders   open Reminders to add one
+//   toolswitch jira        open the Jira issues assigned to you
 //   toolswitch wallpaper-next | wallpaper-prev | wallpaper-random
 
 mod backup;
@@ -25,6 +26,7 @@ mod cutout_view;
 mod desktop;
 mod home;
 mod instance;
+mod jira;
 mod jobs;
 mod models;
 mod monitor;
@@ -65,10 +67,11 @@ pub enum Tool {
     Monitor,
     Power,
     Updates,
+    Jira,
 }
 
 impl Tool {
-    const ALL: [(Tool, &'static str); 14] = [
+    const ALL: [(Tool, &'static str); 15] = [
         (Tool::Clipboard, "clipboard"),
         (Tool::Wallpaper, "wallpaper"),
         (Tool::Compress, "compress"),
@@ -83,6 +86,7 @@ impl Tool {
         (Tool::Monitor, "monitor"),
         (Tool::Power, "power"),
         (Tool::Updates, "updates"),
+        (Tool::Jira, "jira"),
     ];
 
     fn id(self) -> &'static str {
@@ -115,6 +119,7 @@ impl Tool {
             Tool::Monitor => Screen::Monitor,
             Tool::Power => Screen::Power,
             Tool::Updates => Screen::Updates,
+            Tool::Jira => Screen::Jira,
         }
     }
 }
@@ -136,6 +141,7 @@ pub enum Screen {
     Monitor,
     Power,
     Updates,
+    Jira,
     /// The full-screen screenshot to select text on.
     Ocr,
     /// The small window with the text read.
@@ -198,6 +204,7 @@ const NAV: &[(&str, &[NavItem])] = &[
             (Screen::Updates, "⟳", "Updates"),
         ],
     ),
+    ("WORK", &[(Screen::Jira, "☑", "Jira")]),
 ];
 
 /// A second launch's command line, as one line for the socket: fields separated by tabs.
@@ -845,6 +852,7 @@ fn pages(ctx: &egui::Context) -> std::collections::HashMap<Screen, Box<dyn Page>
     pages.insert(Screen::Backup, Box::<backup::BackupPage>::default());
     pages.insert(Screen::Updates, Box::<updates::UpdatesPage>::default());
     pages.insert(Screen::Sign, Box::<sign::SignPage>::default());
+    pages.insert(Screen::Jira, Box::<jira::JiraPage>::default());
     for (screen, name) in [] {
         pages.insert(screen, Box::new(Placeholder(name)));
     }

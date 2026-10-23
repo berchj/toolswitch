@@ -148,6 +148,17 @@ const GROUPS: &[(&str, &[ToolInfo])] = &[
             },
         ],
     ),
+    (
+        "Work",
+        &[ToolInfo {
+            id: "jira",
+            icon: "☑",
+            name: "Jira",
+            description: "A summary of the Jira issues assigned to you, and a heads-up when you get a new one.",
+            screen: Some(Screen::Jira),
+            shortcuts: &[("jira", "Open")],
+        }],
+    ),
 ];
 
 /// A small card for the welcome screen. Returns true if its switch changed.
