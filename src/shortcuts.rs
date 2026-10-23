@@ -47,11 +47,7 @@ pub const TOOLS: &[(&str, &str, &str)] = &[
 ];
 
 pub fn get(tool: &str) -> String {
-    config::load()
-        .shortcuts
-        .get(tool)
-        .cloned()
-        .unwrap_or_else(|| default(tool))
+    config::shortcut(tool).unwrap_or_else(|| default(tool))
 }
 
 /// The shortcut it comes with. Windows already uses many Windows-key combinations, so there
@@ -82,7 +78,7 @@ pub fn register_all() {
 
 /// `accel = None` goes back to the default. If GNOME refuses it, the old one stays.
 pub fn set(tool: &str, accel: Option<String>) -> bool {
-    let old = config::load().shortcuts.get(tool).cloned();
+    let old = config::shortcut(tool);
     let apply = |accel: Option<String>| {
         config::update(|c| match accel {
             Some(a) => _ = c.shortcuts.insert(tool.into(), a),

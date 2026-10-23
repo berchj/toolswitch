@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -36,12 +37,13 @@ pub fn enabled(tool: &str) -> bool {
     if hidden(tool) {
         return false;
     }
-    let config = load();
-    if OFF_BY_DEFAULT.contains(&tool) {
-        config.enabled.contains(tool)
-    } else {
-        !config.disabled.contains(tool)
-    }
+    with(|config| {
+        if OFF_BY_DEFAULT.contains(&tool) {
+            config.enabled.contains(tool)
+        } else {
+            !config.disabled.contains(tool)
+        }
+    })
 }
 
 pub fn set_enabled(tool: &str, on: bool) {
@@ -161,18 +163,38 @@ fn file() -> PathBuf {
     dir().join("config.json")
 }
 
-pub fn load() -> Config {
-    std::fs::read(file())
-        .ok()
-        .and_then(|raw| serde_json::from_slice(&raw).ok())
-        .unwrap_or_default()
+/// The settings, read from the file once and then kept here: the window asks for them every
+/// frame and the background thread every few seconds. Only this app writes the file.
+static CACHE: Mutex<Option<Config>> = Mutex::new(None);
+
+/// Runs `f` on the settings, reading the file the first time.
+fn with<R>(f: impl FnOnce(&mut Config) -> R) -> R {
+    let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    let config = cache.get_or_insert_with(|| {
+        std::fs::read(file())
+            .ok()
+            .and_then(|raw| serde_json::from_slice(&raw).ok())
+            .unwrap_or_default()
+    });
+    f(config)
 }
 
+pub fn load() -> Config {
+    with(|c| c.clone())
+}
+
+/// The shortcut recorded for a tool, without copying the rest of the settings.
+pub fn shortcut(tool: &str) -> Option<String> {
+    with(|c| c.shortcuts.get(tool).cloned())
+}
+
+/// Changes the settings and saves them. `change` must not call back into this module.
 pub fn update(change: impl FnOnce(&mut Config)) -> Config {
-    let mut config = load();
-    change(&mut config);
-    let _ = write_json(&file(), &config);
-    config
+    with(|config| {
+        change(config);
+        let _ = write_json(&file(), config);
+        config.clone()
+    })
 }
 
 /// Writes to a temporary file first, so a crash never leaves half a file.
