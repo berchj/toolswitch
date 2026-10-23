@@ -56,7 +56,7 @@ A second launch hands its command to the running app and exits.
 
 ## Install
 
-Download the file for your system from the [releases](https://github.com/berchj/toolswitch-releases/releases/latest) (public; this repository is private):
+Download the file for your system from the [releases](https://github.com/berchj/toolswitch-releases/releases/latest) or from [berchj.github.io/toolswitch](https://berchj.github.io/toolswitch/):
 
 | System | File | How |
 |---|---|---|
