@@ -67,7 +67,7 @@ pub fn read(image: &image::RgbImage) -> Result<String, String> {
     let words = finder.detect_words(&input).map_err(|e| e.to_string())?;
     let lines = finder.find_text_lines(&input, &words);
 
-    let mut text = vec![];
+    let mut found: Vec<Line> = vec![];
     for line in lines {
         // The box around the line's words, with a little room: letters touch its edges.
         let corners = line.iter().flat_map(|w| w.corners());
@@ -75,6 +75,7 @@ pub fn read(image: &image::RgbImage) -> Result<String, String> {
         for p in corners {
             (x0, y0, x1, y1) = (x0.min(p.x), y0.min(p.y), x1.max(p.x), y1.max(p.y));
         }
+        let (top, bottom, left) = (y0, y1, x0);
         let pad = (y1 - y0) * 0.15;
         let x0 = (x0 - pad).max(0.0) as u32;
         let y0 = (y0 - pad).max(0.0) as u32;
@@ -86,10 +87,39 @@ pub fn read(image: &image::RgbImage) -> Result<String, String> {
         let crop = image::imageops::crop_imm(image, x0, y0, x1 - x0, y1 - y0).to_image();
         let read = read_line(reader, &crop)?;
         if !read.trim().is_empty() {
-            text.push(read.trim().to_string());
+            found.push((top, bottom, left, read.trim().to_string()));
         }
     }
-    Ok(text.join("\n"))
+    Ok(by_rows(found))
+}
+
+/// A line read: (top, bottom, left, text).
+type Line = (f32, f32, f32, String);
+
+/// Lines side by side (a table's cells, a label and its value) go on one row, left to right
+/// and separated by a tab, so they paste into a spreadsheet as columns.
+fn by_rows(mut lines: Vec<Line>) -> String {
+    lines.sort_by(|a, b| (a.0 + a.1).total_cmp(&(b.0 + b.1)));
+    let mut rows: Vec<Vec<Line>> = vec![];
+    for line in lines {
+        // Same row: they share more than half of the shorter one's height.
+        let same = rows.last().is_some_and(|row| {
+            let (top, bottom) = (row[0].0, row[0].1);
+            let shared = bottom.min(line.1) - top.max(line.0);
+            shared > 0.5 * (bottom - top).min(line.1 - line.0)
+        });
+        match rows.last_mut() {
+            Some(row) if same => row.push(line),
+            _ => rows.push(vec![line]),
+        }
+    }
+    rows.into_iter()
+        .map(|mut row| {
+            row.sort_by(|a, b| a.2.total_cmp(&b.2));
+            row.into_iter().map(|l| l.3).collect::<Vec<_>>().join("\t")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// One line of text, read by PaddleOCR.
@@ -140,6 +170,18 @@ fn read_line(reader: &Reader, line: &image::RgbImage) -> Result<String, String> 
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn rows_left_to_right() {
+        let line = |top: f32, left: f32, text: &str| (top, top + 10.0, left, text.to_string());
+        let text = super::by_rows(vec![
+            line(0.0, 200.0, "Carga de los kits"),
+            line(12.0, 200.0, "con su foto"),
+            line(1.0, 0.0, "Sección Kits"),
+            line(30.0, 0.0, "Total"),
+        ]);
+        assert_eq!(text, "Sección Kits\tCarga de los kits\ncon su foto\nTotal");
+    }
+
     // OCR_TEST_IMAGE=photo.png cargo test --release ocr_image -- --ignored --nocapture
     #[test]
     #[ignore]
