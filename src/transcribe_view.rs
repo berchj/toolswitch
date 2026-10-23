@@ -20,6 +20,9 @@ fn settings_file() -> PathBuf {
     config::dir().join("transcribe.json")
 }
 
+/// A file's name and its text.
+type Transcript = (String, String);
+
 /// The file being listened to and how far it got (0..1).
 type Progress = Arc<Mutex<Option<(String, f32)>>>;
 
@@ -28,7 +31,7 @@ pub struct TranscribePage {
     jobs: Option<FileJobs>,
     picked: (Sender<Vec<PathBuf>>, Receiver<Vec<PathBuf>>),
     progress: Progress,
-    texts: (Sender<(String, String)>, Receiver<(String, String)>),
+    texts: (Sender<Transcript>, Receiver<Transcript>),
     /// The last text read and the file it came from.
     last: Option<(String, String)>,
 }
