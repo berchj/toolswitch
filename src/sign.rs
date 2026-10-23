@@ -1,5 +1,5 @@
-// Sign PDF: draw your signature once (or load a picture of it), then drop PDFs and a signed
-// copy is saved next to each one as name-signed.pdf, with the signature where you chose.
+// Sign PDF: draw your signature once (or load a picture of it), drop PDFs, drag the signature
+// to its place on the page, and a signed copy is saved next to each one as name-signed.pdf.
 
 use crate::jobs::{self, FileJobs, Work};
 use crate::{config, theme};
@@ -13,8 +13,8 @@ const SIGNATURE: &str = "signature.png";
 /// The drawing area, in points. The signature is saved at twice this size.
 const PAD: egui::Vec2 = egui::vec2(440.0, 150.0);
 const SCALE: f32 = 2.0;
-/// Space between the signature and the page edge, in PDF points (1/72 inch).
-const MARGIN: f32 = 40.0;
+/// The page preview's width, in points.
+const SHEET_WIDTH: f32 = 230.0;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum Pages {
@@ -23,21 +23,17 @@ pub enum Pages {
     All,
 }
 
-#[derive(Clone, Copy, PartialEq)]
-pub enum Corner {
-    BottomRight,
-    BottomCenter,
-    BottomLeft,
-    TopRight,
-}
-
 #[derive(Clone, Copy)]
 pub struct Placement {
     pub pages: Pages,
-    pub corner: Corner,
+    /// Where the signature's center goes, as shares of the page as shown (0, 0 = top left).
+    pub center: (f32, f32),
     /// Signature width as a share of the page width.
     pub width: f32,
 }
+
+/// Bottom right, where signatures usually go.
+const DEFAULT_CENTER: (f32, f32) = (0.75, 0.88);
 
 fn signature_file() -> PathBuf {
     config::dir().join(SIGNATURE)
@@ -136,7 +132,12 @@ fn page_box(doc: &Document, page_id: lopdf::ObjectId) -> [f32; 4] {
             && b.len() == 4
         {
             let n: Vec<f32> = b.iter().map(|v| v.as_float().unwrap_or(0.0)).collect();
-            return [n[0].min(n[2]), n[1].min(n[3]), n[0].max(n[2]), n[1].max(n[3])];
+            return [
+                n[0].min(n[2]),
+                n[1].min(n[3]),
+                n[0].max(n[2]),
+                n[1].max(n[3]),
+            ];
         }
     }
     // A4
@@ -152,7 +153,11 @@ fn page_rotation(doc: &Document, page_id: lopdf::ObjectId) -> i64 {
 
 /// The matrix that draws the signature upright at (vx, vy), size (sw, sh), measured on the
 /// page as it's shown, whatever its rotation.
-fn placement_matrix(bx: [f32; 4], rotation: i64, (vx, vy, sw, sh): (f32, f32, f32, f32)) -> [f32; 6] {
+fn placement_matrix(
+    bx: [f32; 4],
+    rotation: i64,
+    (vx, vy, sw, sh): (f32, f32, f32, f32),
+) -> [f32; 6] {
     let [x0, y0, x1, y1] = bx;
     match rotation {
         90 => [0.0, sw, -sh, 0.0, x1 - vy, y0 + vx],
@@ -164,8 +169,16 @@ fn placement_matrix(bx: [f32; 4], rotation: i64, (vx, vy, sw, sh): (f32, f32, f3
 
 /// Puts the page's existing drawing between q and Q, and the signature after it, so nothing
 /// the page leaves changed (a scale, a move) applies to the signature.
-fn add_on_top(doc: &mut Document, page_id: lopdf::ObjectId, content: Vec<u8>) -> Result<(), String> {
-    let existing: Vec<Object> = match doc.get_dictionary(page_id).map_err(|e| e.to_string())?.get(b"Contents") {
+fn add_on_top(
+    doc: &mut Document,
+    page_id: lopdf::ObjectId,
+    content: Vec<u8>,
+) -> Result<(), String> {
+    let existing: Vec<Object> = match doc
+        .get_dictionary(page_id)
+        .map_err(|e| e.to_string())?
+        .get(b"Contents")
+    {
         Ok(Object::Reference(id)) => vec![Object::Reference(*id)],
         Ok(Object::Array(items)) => items.clone(),
         _ => vec![],
@@ -241,15 +254,10 @@ pub fn sign_pdf(
         };
         let sw = pw * placement.width;
         let sh = sw * h as f32 / w as f32;
-        let vx = match placement.corner {
-            Corner::BottomLeft => MARGIN,
-            Corner::BottomCenter => (pw - sw) / 2.0,
-            Corner::BottomRight | Corner::TopRight => pw - MARGIN - sw,
-        };
-        let vy = match placement.corner {
-            Corner::TopRight => ph - MARGIN - sh,
-            _ => MARGIN,
-        };
+        // PDF counts up from the bottom; the signature stays inside the page.
+        let (cx, cy) = placement.center;
+        let vx = (cx * pw - sw / 2.0).clamp(0.0, (pw - sw).max(0.0));
+        let vy = ((1.0 - cy) * ph - sh / 2.0).clamp(0.0, (ph - sh).max(0.0));
         let [a, b, c, d, e, f] = placement_matrix(bx, rotation, (vx, vy, sw, sh));
 
         // A page that inherits its resources (fonts, pictures) gets its own copy first, or
@@ -265,8 +273,7 @@ pub fn sign_pdf(
         }
         doc.add_xobject(page_id, "TsSignature", picture_id)
             .map_err(|e| e.to_string())?;
-        let content =
-            format!("q {a:.3} {b:.3} {c:.3} {d:.3} {e:.3} {f:.3} cm /TsSignature Do Q\n");
+        let content = format!("q {a:.3} {b:.3} {c:.3} {d:.3} {e:.3} {f:.3} cm /TsSignature Do Q\n");
         add_on_top(&mut doc, page_id, content.into_bytes())?;
     }
 
@@ -299,6 +306,11 @@ pub struct SignPage {
     drawing: bool,
     blue_ink: bool,
     placement: Placement,
+    /// PDFs dropped and waiting for Sign, so the signature can be placed on the first one.
+    pending: Vec<PathBuf>,
+    /// The first pending PDF's page, as shown in the preview.
+    sheet: Option<Sheet>,
+    sheets: (Sender<Sheet>, Receiver<Sheet>),
     jobs: Option<FileJobs>,
     pdfs: (Sender<Vec<PathBuf>>, Receiver<Vec<PathBuf>>),
     picture: (Sender<Vec<PathBuf>>, Receiver<Vec<PathBuf>>),
@@ -315,9 +327,12 @@ impl Default for SignPage {
             blue_ink: true,
             placement: Placement {
                 pages: Pages::Last,
-                corner: Corner::BottomRight,
+                center: DEFAULT_CENTER,
                 width: 0.25,
             },
+            pending: vec![],
+            sheet: None,
+            sheets: channel(),
             jobs: None,
             pdfs: channel(),
             picture: channel(),
@@ -339,11 +354,34 @@ impl SignPage {
         self.strokes.clear();
     }
 
+    /// Dropped PDFs wait for Sign; the first one shows in the preview.
     fn add(&mut self, files: &[PathBuf], ctx: &egui::Context) {
+        let was_empty = self.pending.is_empty();
+        self.pending.extend(jobs::collect(files, is_pdf));
+        if was_empty && !self.pending.is_empty() {
+            self.show_page(ctx);
+        }
+    }
+
+    /// Draws the first pending PDF's page in the background.
+    fn show_page(&mut self, ctx: &egui::Context) {
+        self.sheet = None;
+        let Some(file) = self.pending.first().cloned() else {
+            return;
+        };
+        let (sender, ctx, pages) = (self.sheets.0.clone(), ctx.clone(), self.placement.pages);
+        std::thread::spawn(move || {
+            let _ = sender.send(Sheet::draw(&ctx, file, pages));
+            ctx.request_repaint();
+        });
+    }
+
+    fn sign(&mut self, ctx: &egui::Context) {
         let Some(signature) = self.signature.clone() else {
             self.error = Some("Draw or load your signature first.".into());
             return;
         };
+        self.error = None;
         let signature = Arc::new(signature);
         let placement = self.placement;
         let work: Work = Arc::new(move |file| {
@@ -351,9 +389,10 @@ impl SignPage {
             Ok((out, String::new()))
         });
         let jobs = self.jobs.get_or_insert_with(|| FileJobs::new(ctx));
-        for file in jobs::collect(files, is_pdf) {
+        for file in self.pending.drain(..) {
             jobs.add(file, work.clone());
         }
+        self.sheet = None;
     }
 
     fn pad(&mut self, ui: &mut egui::Ui) {
@@ -423,6 +462,12 @@ impl crate::Page for SignPage {
         while let Ok(files) = self.pdfs.1.try_recv() {
             self.add(&files, &ctx);
         }
+        while let Ok(sheet) = self.sheets.1.try_recv() {
+            // Only the page of the PDF that's still first and with the pages chosen now.
+            if self.pending.first() == Some(&sheet.file) && sheet.pages == self.placement.pages {
+                self.sheet = Some(sheet);
+            }
+        }
         if let Ok(files) = self.picture.1.try_recv()
             && let Some(file) = files.first()
         {
@@ -435,7 +480,7 @@ impl crate::Page for SignPage {
         theme::page_header(
             ui,
             "Sign PDF",
-            "Your signature on PDFs, without printing. A signed copy is saved next to each one as name-signed.",
+            "Your signature on PDFs, without printing. Drop them, drag the signature to its place and Sign. A signed copy is saved next to each one as name-signed.",
         );
         ui.add_space(14.0);
 
@@ -514,10 +559,17 @@ impl crate::Page for SignPage {
 
                 theme::card().show(ui, |ui| {
                     ui.set_width(ui.available_width());
-                    ui.horizontal(|ui| {
+                    ui.horizontal_top(|ui| {
+                        let pages_before = self.placement.pages;
                         ui.vertical(|ui| {
+                            ui.set_max_width(ui.available_width() - SHEET_WIDTH - 24.0);
                             ui.label(egui::RichText::new("Where it goes").strong());
                             ui.add_space(4.0);
+                            ui.label(
+                                egui::RichText::new("Drag the signature on the page.")
+                                    .color(theme::MUTED),
+                            );
+                            ui.add_space(8.0);
                             let p = &mut self.placement;
                             ui.horizontal(|ui| {
                                 ui.label(egui::RichText::new("Page").color(theme::MUTED));
@@ -526,42 +578,87 @@ impl crate::Page for SignPage {
                                 ui.radio_value(&mut p.pages, Pages::All, "All");
                             });
                             ui.horizontal(|ui| {
-                                ui.label(egui::RichText::new("Corner").color(theme::MUTED));
-                                egui::ComboBox::from_id_salt("corner")
-                                    .selected_text(corner_label(p.corner))
-                                    .show_ui(ui, |ui| {
-                                        for c in [
-                                            Corner::BottomRight,
-                                            Corner::BottomCenter,
-                                            Corner::BottomLeft,
-                                            Corner::TopRight,
-                                        ] {
-                                            ui.selectable_value(&mut p.corner, c, corner_label(c));
-                                        }
-                                    });
-                            });
-                            ui.horizontal(|ui| {
                                 ui.label(egui::RichText::new("Size").color(theme::MUTED));
                                 ui.add(
-                                    egui::Slider::new(&mut p.width, 0.12..=0.5).show_value(false),
+                                    egui::Slider::new(&mut p.width, 0.08..=0.6).show_value(false),
                                 );
                             });
+                            ui.add_space(12.0);
+                            if self.pending.is_empty() {
+                                if theme::drop_zone(
+                                    ui,
+                                    hovering,
+                                    "Drop PDFs here",
+                                    "or click to choose · also from the right-click menu in Files",
+                                )
+                                .clicked()
+                                {
+                                    jobs::pick_files(
+                                        &ctx,
+                                        self.pdfs.0.clone(),
+                                        "Sign PDF",
+                                        ("PDF", &["pdf"]),
+                                    );
+                                }
+                            } else {
+                                let first = self.pending[0]
+                                    .file_name()
+                                    .unwrap_or_default()
+                                    .to_string_lossy()
+                                    .into_owned();
+                                let more = self.pending.len() - 1;
+                                let text = if more > 0 {
+                                    format!("{first} and {more} more")
+                                } else {
+                                    first
+                                };
+                                ui.add(
+                                    egui::Label::new(egui::RichText::new(text).strong()).truncate(),
+                                );
+                                if more > 0 {
+                                    ui.label(
+                                        egui::RichText::new(
+                                            "All get the signature in the same place.",
+                                        )
+                                        .color(theme::MUTED),
+                                    );
+                                }
+                                ui.add_space(8.0);
+                                ui.horizontal(|ui| {
+                                    let sign = egui::Button::new(
+                                        egui::RichText::new("  Sign  ").color(egui::Color32::WHITE),
+                                    )
+                                    .fill(theme::ACCENT);
+                                    if ui.add_enabled(self.signature.is_some(), sign).clicked() {
+                                        self.sign(&ctx);
+                                    }
+                                    if ui.button("Cancel").clicked() {
+                                        self.pending.clear();
+                                        self.sheet = None;
+                                    }
+                                });
+                            }
                         });
-                        ui.add_space(20.0);
-                        preview(ui, &self.placement, self.texture.as_ref());
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                            let aspect = self
+                                .texture
+                                .as_ref()
+                                .map_or(0.35, |t| t.size_vec2().y / t.size_vec2().x);
+                            sheet(
+                                ui,
+                                &mut self.placement,
+                                self.sheet.as_ref(),
+                                self.texture.as_ref(),
+                                aspect,
+                                !self.pending.is_empty(),
+                            );
+                        });
+                        if self.placement.pages != pages_before {
+                            self.show_page(&ctx);
+                        }
                     });
                 });
                 ui.add_space(10.0);
-                if theme::drop_zone(
-                    ui,
-                    hovering,
-                    "Drop PDFs here to sign them",
-                    "or click to choose · also from the right-click menu in Files",
-                )
-                .clicked()
-                {
-                    jobs::pick_files(&ctx, self.pdfs.0.clone(), "Sign PDF", ("PDF", &["pdf"]));
-                }
                 if let Some(error) = &self.error {
                     ui.label(egui::RichText::new(error).color(theme::WARNING));
                 }
@@ -573,46 +670,154 @@ impl crate::Page for SignPage {
     }
 }
 
-fn corner_label(c: Corner) -> &'static str {
-    match c {
-        Corner::BottomRight => "Bottom right",
-        Corner::BottomCenter => "Bottom center",
-        Corner::BottomLeft => "Bottom left",
-        Corner::TopRight => "Top right",
+/// A PDF's page drawn for the preview: the page itself where pdftoppm (poppler) is
+/// installed, else a blank sheet of the page's shape.
+struct Sheet {
+    file: PathBuf,
+    pages: Pages,
+    texture: Option<egui::TextureHandle>,
+    /// Height over width, as shown.
+    aspect: f32,
+}
+
+impl Sheet {
+    fn draw(ctx: &egui::Context, file: PathBuf, pages: Pages) -> Sheet {
+        let doc = Document::load(&file).ok();
+        let ids: Vec<lopdf::ObjectId> = doc
+            .as_ref()
+            .map(|d| d.get_pages().values().copied().collect())
+            .unwrap_or_default();
+        let index = match pages {
+            Pages::Last => ids.len().saturating_sub(1),
+            Pages::First | Pages::All => 0,
+        };
+        let aspect = match (&doc, ids.get(index)) {
+            (Some(doc), Some(&id)) => {
+                let bx = page_box(doc, id);
+                let (w, h) = (bx[2] - bx[0], bx[3] - bx[1]);
+                let a = if page_rotation(doc, id) % 180 == 0 {
+                    h / w
+                } else {
+                    w / h
+                };
+                if a.is_finite() && a > 0.1 { a } else { 1.414 }
+            }
+            _ => 1.414,
+        };
+        let texture = render_page(&file, index + 1)
+            .map(|image| ctx.load_texture("sign-page", image, egui::TextureOptions::LINEAR));
+        let aspect = texture
+            .as_ref()
+            .map_or(aspect, |t| t.size_vec2().y / t.size_vec2().x);
+        Sheet {
+            file,
+            pages,
+            texture,
+            aspect,
+        }
     }
 }
 
-/// A small sheet showing where the signature will be.
-fn preview(ui: &mut egui::Ui, p: &Placement, texture: Option<&egui::TextureHandle>) {
-    let page = egui::vec2(90.0, 127.0);
-    let (rect, _) = ui.allocate_exact_size(page, egui::Sense::hover());
-    let painter = ui.painter();
-    painter.rect_filled(rect, 3.0, egui::Color32::WHITE);
-    for i in 0..7 {
-        let y = rect.top() + 14.0 + i as f32 * 9.0;
-        painter.line_segment(
-            [
-                egui::pos2(rect.left() + 10.0, y),
-                egui::pos2(rect.right() - 10.0, y),
-            ],
-            egui::Stroke::new(2.0, egui::Color32::from_gray(225)),
+/// Page `number` (from 1) as a picture, with poppler's pdftoppm.
+fn render_page(file: &Path, number: usize) -> Option<egui::ColorImage> {
+    let prefix = std::env::temp_dir().join(format!("toolswitch-page-{}", std::process::id()));
+    let n = number.to_string();
+    let ok = crate::desktop::command("pdftoppm")
+        .args([
+            "-f",
+            &n,
+            "-l",
+            &n,
+            "-scale-to",
+            "700",
+            "-png",
+            "-singlefile",
+        ])
+        .arg(file)
+        .arg(&prefix)
+        .status()
+        .is_ok_and(|s| s.success());
+    let png = prefix.with_extension("png");
+    let image = ok.then(|| image::open(&png).ok()).flatten();
+    let _ = std::fs::remove_file(&png);
+    let image = image?.into_rgba8();
+    let size = [image.width() as usize, image.height() as usize];
+    Some(egui::ColorImage::from_rgba_unmultiplied(
+        size,
+        image.as_raw(),
+    ))
+}
+
+/// The page with the signature on it; dragging or clicking moves the signature.
+fn sheet(
+    ui: &mut egui::Ui,
+    p: &mut Placement,
+    page: Option<&Sheet>,
+    signature: Option<&egui::TextureHandle>,
+    signature_aspect: f32,
+    waiting: bool,
+) {
+    let aspect = page.map_or(1.414, |s| s.aspect).clamp(0.3, 2.5);
+    let size = egui::vec2(SHEET_WIDTH, (SHEET_WIDTH * aspect).min(420.0));
+    let size = egui::vec2(size.y / aspect, size.y);
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click_and_drag());
+    if (response.dragged() || response.clicked())
+        && let Some(pos) = response.interact_pointer_pos()
+    {
+        p.center = (
+            ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0),
+            ((pos.y - rect.top()) / rect.height()).clamp(0.0, 1.0),
         );
     }
-    let margin = MARGIN / 595.0 * page.x;
-    let sw = page.x * p.width;
-    let aspect = texture.map_or(0.35, |t| t.size_vec2().y / t.size_vec2().x);
-    let sh = sw * aspect;
-    let x = match p.corner {
-        Corner::BottomLeft => rect.left() + margin,
-        Corner::BottomCenter => rect.center().x - sw / 2.0,
-        Corner::BottomRight | Corner::TopRight => rect.right() - margin - sw,
-    };
-    let y = match p.corner {
-        Corner::TopRight => rect.top() + margin,
-        _ => rect.bottom() - margin - sh,
-    };
+    let painter = ui.painter_at(rect.expand(1.0));
+    painter.rect_filled(rect, 3.0, egui::Color32::WHITE);
+    match page.and_then(|s| s.texture.as_ref()) {
+        Some(t) => {
+            painter.image(
+                t.id(),
+                rect,
+                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                egui::Color32::WHITE,
+            );
+        }
+        None => {
+            // A sheet with lines standing for text; while a page loads, it says so.
+            for i in 0..((rect.height() - 30.0) / 12.0) as usize {
+                let y = rect.top() + 18.0 + i as f32 * 12.0;
+                painter.line_segment(
+                    [
+                        egui::pos2(rect.left() + 16.0, y),
+                        egui::pos2(rect.right() - 16.0, y),
+                    ],
+                    egui::Stroke::new(2.0, egui::Color32::from_gray(228)),
+                );
+            }
+            if waiting && page.is_none() {
+                painter.text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    "Loading the page…",
+                    egui::FontId::proportional(13.0),
+                    egui::Color32::from_gray(120),
+                );
+            }
+        }
+    }
+    painter.rect_stroke(
+        rect,
+        3.0,
+        egui::Stroke::new(1.0, theme::BORDER),
+        egui::StrokeKind::Outside,
+    );
+    let sw = rect.width() * p.width;
+    let sh = sw * signature_aspect;
+    // Kept inside the page, like the signed copy.
+    let x = (rect.left() + p.center.0 * rect.width() - sw / 2.0)
+        .clamp(rect.left(), (rect.right() - sw).max(rect.left()));
+    let y = (rect.top() + p.center.1 * rect.height() - sh / 2.0)
+        .clamp(rect.top(), (rect.bottom() - sh).max(rect.top()));
     let sig = egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(sw, sh));
-    match texture {
+    match signature {
         Some(t) => {
             painter.image(
                 t.id(),
@@ -625,6 +830,13 @@ fn preview(ui: &mut egui::Ui, p: &Placement, texture: Option<&egui::TextureHandl
             painter.rect_filled(sig, 2.0, theme::ACCENT.gamma_multiply(0.5));
         }
     }
+    painter.rect_stroke(
+        sig.expand(2.0),
+        2.0,
+        egui::Stroke::new(1.0, theme::ACCENT.gamma_multiply(0.7)),
+        egui::StrokeKind::Outside,
+    );
+    response.on_hover_cursor(egui::CursorIcon::Grab);
 }
 
 #[cfg(test)]
@@ -632,10 +844,18 @@ mod tests {
     use super::*;
 
     /// Signs $SIGN_TEST_PDF with a scribble and prints where the copy went.
+    /// $SIGN_TEST_CENTER ("0.2,0.85") puts it somewhere else than the default.
     #[test]
     #[ignore]
     fn sign_a_pdf() {
         let pdf = std::env::var("SIGN_TEST_PDF").expect("set SIGN_TEST_PDF");
+        let center = std::env::var("SIGN_TEST_CENTER")
+            .ok()
+            .and_then(|c| {
+                let (x, y) = c.split_once(',')?;
+                Some((x.parse().ok()?, y.parse().ok()?))
+            })
+            .unwrap_or(DEFAULT_CENTER);
         let strokes = vec![
             (0..60)
                 .map(|i| egui::pos2(40.0 + i as f32 * 5.0, 80.0 + (i as f32 * 0.4).sin() * 30.0))
@@ -647,7 +867,7 @@ mod tests {
             &signature,
             Placement {
                 pages: Pages::Last,
-                corner: Corner::BottomRight,
+                center,
                 width: 0.3,
             },
         )
@@ -668,23 +888,33 @@ mod tests {
             .set("Rotate", 90);
         let turned = std::path::Path::new(&pdf).with_file_name("turned.pdf");
         doc.save(&turned).unwrap();
-        let strokes = vec![(0..60)
-            .map(|i| egui::pos2(40.0 + i as f32 * 5.0, 80.0 + (i as f32 * 0.4).sin() * 30.0))
-            .collect::<Vec<_>>()];
+        let strokes = vec![
+            (0..60)
+                .map(|i| egui::pos2(40.0 + i as f32 * 5.0, 80.0 + (i as f32 * 0.4).sin() * 30.0))
+                .collect::<Vec<_>>(),
+        ];
         let signature = render(&strokes, [0x1a, 0x3a, 0x9c]);
         let placement = Placement {
             pages: Pages::First,
-            corner: Corner::BottomRight,
+            center: DEFAULT_CENTER,
             width: 0.3,
         };
-        println!("{}", sign_pdf(&turned, &signature, placement).unwrap().display());
+        println!(
+            "{}",
+            sign_pdf(&turned, &signature, placement).unwrap().display()
+        );
     }
 
     #[test]
     fn upright_on_turned_pages() {
         let bx = [0.0, 0.0, 600.0, 800.0];
         // The signature's bottom-left corner, as shown, lands where it should on the page.
-        for (rotation, expected) in [(0, (10.0, 20.0)), (90, (580.0, 10.0)), (180, (590.0, 780.0)), (270, (20.0, 790.0))] {
+        for (rotation, expected) in [
+            (0, (10.0, 20.0)),
+            (90, (580.0, 10.0)),
+            (180, (590.0, 780.0)),
+            (270, (20.0, 790.0)),
+        ] {
             let [_, _, _, _, e, f] = placement_matrix(bx, rotation, (10.0, 20.0, 50.0, 30.0));
             assert_eq!((e, f), expected, "rotation {rotation}");
         }

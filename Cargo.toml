@@ -1,6 +1,6 @@
 [package]
 name = "toolswitch"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "Small everyday tools in one tiny app: wallpapers, clipboard history, image compressor, screen OCR, background remover"
 license = "MIT"

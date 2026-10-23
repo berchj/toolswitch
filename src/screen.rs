@@ -56,8 +56,12 @@ mod imp {
 
     /// A screenshot of the monitor the mouse is on, and where that monitor is.
     pub fn capture_under_mouse() -> Option<(Monitor, image::RgbImage)> {
-        // On Wayland X11 only sees black: the desktop's screenshot portal is asked instead.
+        // On Wayland X11 only sees black. GNOME's own gnome-screenshot takes it without asking;
+        // otherwise the desktop's screenshot portal, which shows a permission dialog.
         if std::env::var("XDG_SESSION_TYPE").is_ok_and(|t| t == "wayland") {
+            if let Some(shot) = gnome_screenshot() {
+                return Some(shot);
+            }
             let image = super::portal::screenshot()
                 .map_err(|e| eprintln!("Screenshot portal: {e}"))
                 .ok()?;
@@ -70,6 +74,46 @@ mod imp {
             return Some((monitor, image));
         }
         x11_capture()
+    }
+
+    /// The whole desktop with gnome-screenshot, cut to the monitor the mouse is on.
+    fn gnome_screenshot() -> Option<(Monitor, image::RgbImage)> {
+        let file = std::env::temp_dir().join(format!("toolswitch-shot-{}.png", std::process::id()));
+        let status = crate::desktop::command("gnome-screenshot")
+            .arg("-f")
+            .arg(&file)
+            .status()
+            .ok()?;
+        let image = status.success().then(|| image::open(&file).ok()).flatten();
+        let _ = std::fs::remove_file(&file);
+        let image = image?.into_rgb8();
+        let whole = Monitor {
+            x: 0.0,
+            y: 0.0,
+            width: image.width() as f32,
+            height: image.height() as f32,
+        };
+        // XWayland knows the monitors' layout, which matches the screenshot's.
+        let fits = |m: &Monitor| {
+            m.x >= 0.0
+                && m.y >= 0.0
+                && m.x + m.width <= whole.width
+                && m.y + m.height <= whole.height
+        };
+        match monitor_under_mouse().filter(fits) {
+            Some(m) => {
+                let part = image::imageops::crop_imm(
+                    &image,
+                    m.x as u32,
+                    m.y as u32,
+                    m.width as u32,
+                    m.height as u32,
+                )
+                .to_image();
+                Some((m, part))
+            }
+            None => Some((whole, image)),
+        }
     }
 
     fn x11_capture() -> Option<(Monitor, image::RgbImage)> {

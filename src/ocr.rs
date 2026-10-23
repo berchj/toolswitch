@@ -1,26 +1,30 @@
-// Text from screen: reads the text in part of a screenshot with ocrs, offline.
-// The two models (~12 MB) are downloaded the first time it's used.
-// ocrs only knows letters without accents: "canción" comes out as "cancion".
+// Text from screen: reads the text in part of a screenshot, offline. ocrs finds the lines of
+// text and PaddleOCR's Latin model (PP-OCRv5, Apache 2.0) reads them, accents and ñ included.
+// The models (~10 MB) are downloaded the first time it's used.
 
 use ocrs::{ImageSource, OcrEngine, OcrEngineParams};
+use rten_tensor::prelude::*;
+use rten_tensor::{NdTensor, Tensor};
 use std::sync::OnceLock;
 
-const MODELS_URL: &str = "https://ocrs-models.s3-accelerate.amazonaws.com";
+const OCRS_URL: &str = "https://ocrs-models.s3-accelerate.amazonaws.com";
 const DETECTION: &str = "text-detection.onnx";
-const RECOGNITION: &str = "text-recognition.onnx";
+const PADDLE_URL: &str = "https://huggingface.co/monkt/paddleocr-onnx/resolve/main/languages/latin";
+const RECOGNITION: &str = "latin-PP-OCRv5-rec.onnx";
+const DICT: &str = "latin-PP-OCRv5-dict.txt";
+/// ocrs' own reader, used before: it only knew letters without accents.
+const OLD_RECOGNITION: &str = "text-recognition.onnx";
+/// The height PaddleOCR reads lines at.
+const LINE_HEIGHT: u32 = 48;
 
-fn model(name: &str) -> Result<rten::Model, String> {
-    crate::models::load(name, &format!("{MODELS_URL}/{name}"))
-}
-
-/// Loading the models takes a moment, so it happens once.
-fn engine() -> Result<&'static OcrEngine, String> {
+/// Finds the lines; loading takes a moment, so it happens once.
+fn finder() -> Result<&'static OcrEngine, String> {
     static ENGINE: OnceLock<Result<OcrEngine, String>> = OnceLock::new();
     ENGINE
         .get_or_init(|| {
+            let detection = crate::models::load(DETECTION, &format!("{OCRS_URL}/{DETECTION}"))?;
             OcrEngine::new(OcrEngineParams {
-                detection_model: Some(model(DETECTION)?),
-                recognition_model: Some(model(RECOGNITION)?),
+                detection_model: Some(detection),
                 ..Default::default()
             })
             .map_err(|e| e.to_string())
@@ -29,207 +33,113 @@ fn engine() -> Result<&'static OcrEngine, String> {
         .map_err(Clone::clone)
 }
 
+struct Reader {
+    model: rten::Model,
+    /// Index 0 is "nothing here"; then the dictionary's characters, then a space.
+    chars: Vec<char>,
+}
+
+fn reader() -> Result<&'static Reader, String> {
+    static READER: OnceLock<Result<Reader, String>> = OnceLock::new();
+    READER
+        .get_or_init(|| {
+            let model = crate::models::load(RECOGNITION, &format!("{PADDLE_URL}/rec.onnx"))?;
+            let dict = crate::models::get(DICT, &format!("{PADDLE_URL}/dict.txt"))?;
+            let dict = std::fs::read_to_string(dict).map_err(|e| format!("{DICT}: {e}"))?;
+            let chars = std::iter::once('\0')
+                .chain(dict.lines().filter_map(|l| l.chars().next()))
+                .chain(std::iter::once(' '))
+                .collect();
+            let _ = std::fs::remove_file(crate::models::dir().join(OLD_RECOGNITION));
+            Ok(Reader { model, chars })
+        })
+        .as_ref()
+        .map_err(Clone::clone)
+}
+
 /// The text in the image, one line per line of text.
 pub fn read(image: &image::RgbImage) -> Result<String, String> {
-    let engine = engine()?;
+    let finder = finder()?;
+    let reader = reader()?;
     let source =
         ImageSource::from_bytes(image.as_raw(), image.dimensions()).map_err(|e| e.to_string())?;
-    let input = engine.prepare_input(source).map_err(|e| e.to_string())?;
-    let text = engine.get_text(&input).map_err(|e| e.to_string())?;
-    Ok(fix_accents(text.trim()))
-}
+    let input = finder.prepare_input(source).map_err(|e| e.to_string())?;
+    let words = finder.detect_words(&input).map_err(|e| e.to_string())?;
+    let lines = finder.find_text_lines(&input, &words);
 
-// ---------- accents ----------
-
-// ocrs doesn't know á, é, í, ó, ú, ñ: it reads them as "?". Common Spanish words and
-// endings get their letter back; anything else keeps the "?".
-const WORDS: &[(&str, &str)] = &[
-    ("qu?", "qué"),
-    ("est?", "está"),
-    ("est?n", "están"),
-    ("est?s", "estás"),
-    ("m?s", "más"),
-    ("tambi?n", "también"),
-    ("despu?s", "después"),
-    ("as?", "así"),
-    ("aqu?", "aquí"),
-    ("ah?", "ahí"),
-    ("all?", "allí"),
-    ("ac?", "acá"),
-    ("s?", "sí"),
-    ("t?", "tú"),
-    ("?l", "él"),
-    ("a?n", "aún"),
-    ("s?lo", "solo"),
-    ("d?a", "día"),
-    ("d?as", "días"),
-    ("a?o", "año"),
-    ("a?os", "años"),
-    ("ni?o", "niño"),
-    ("ni?os", "niños"),
-    ("ni?a", "niña"),
-    ("ma?ana", "mañana"),
-    ("espa?ol", "español"),
-    ("espa?a", "españa"),
-    ("dise?o", "diseño"),
-    ("peque?o", "pequeño"),
-    ("peque?a", "pequeña"),
-    ("contrase?a", "contraseña"),
-    ("se?or", "señor"),
-    ("se?ora", "señora"),
-    ("p?gina", "página"),
-    ("p?ginas", "páginas"),
-    ("n?mero", "número"),
-    ("n?meros", "números"),
-    ("m?vil", "móvil"),
-    ("f?cil", "fácil"),
-    ("dif?cil", "difícil"),
-    ("r?pido", "rápido"),
-    ("r?pida", "rápida"),
-    ("r?pidos", "rápidos"),
-    ("r?pidas", "rápidas"),
-    ("autom?tico", "automático"),
-    ("autom?tica", "automática"),
-    ("autom?ticos", "automáticos"),
-    ("autom?ticamente", "automáticamente"),
-    ("pol?tica", "política"),
-    ("pr?ctica", "práctica"),
-    ("m?todo", "método"),
-    ("cr?tica", "crítica"),
-    ("t?tulo", "título"),
-    ("m?ximo", "máximo"),
-    ("m?nimo", "mínimo"),
-    ("c?digo", "código"),
-    ("aplicaci?n", "aplicación"),
-    ("v?deo", "vídeo"),
-    ("lim?n", "limón"),
-    ("tel?fono", "teléfono"),
-    ("cr?dito", "crédito"),
-    ("d?bito", "débito"),
-    ("pa?s", "país"),
-    ("d?nde", "dónde"),
-    ("c?mo", "cómo"),
-    ("cu?ndo", "cuándo"),
-    ("cu?l", "cuál"),
-    ("qui?n", "quién"),
-    ("cu?nto", "cuánto"),
-    ("adem?s", "además"),
-    ("seg?n", "según"),
-    ("ser?", "será"),
-    ("har?", "hará"),
-    ("podr?", "podrá"),
-    ("tendr?", "tendrá"),
-    ("men?", "menú"),
-    ("art?culo", "artículo"),
-    ("p?blico", "público"),
-    ("m?sica", "música"),
-    ("pr?ximo", "próximo"),
-    ("?ltimo", "último"),
-    ("?ltima", "última"),
-    ("sesi?n", "sesión"),
-    ("raz?n", "razón"),
-    ("coraz?n", "corazón"),
-    ("bot?n", "botón"),
-    ("im?genes", "imágenes"),
-    ("ingl?s", "inglés"),
-    ("caf?", "café"),
-    ("mam?", "mamá"),
-    ("pap?", "papá"),
-    ("compa??a", "compañía"),
-    ("tama?o", "tamaño"),
-    ("due?o", "dueño"),
-    ("se?al", "señal"),
-    ("enga?o", "engaño"),
-    ("ba?o", "baño"),
-    ("oto?o", "otoño"),
-];
-
-pub fn fix_accents(text: &str) -> String {
-    text.lines()
-        .map(|line| line.split(' ').map(fix_word).collect::<Vec<_>>().join(" "))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-fn fix_word(word: &str) -> String {
-    if !word.contains('?') {
-        return word.to_string();
-    }
-    // Punctuation around the word stays as it is; a "?" at the end may be a real question mark.
-    let start = word
-        .find(|c: char| c.is_alphanumeric() || c == '?')
-        .unwrap_or(0);
-    let (lead, rest) = word.split_at(start);
-    // Where the last letter ends: "ma?ana?" is the word "ma?ana" and a question mark.
-    let end = rest
-        .char_indices()
-        .rfind(|(_, c)| c.is_alphanumeric())
-        .map_or(0, |(i, c)| i + c.len_utf8());
-    let (core, tail) = rest.split_at(end);
-    if let Some(fixed) = lookup(rest) {
-        return format!("{lead}{fixed}");
-    }
-    if let Some(fixed) = lookup(core).or_else(|| by_ending(core)) {
-        return format!("{lead}{fixed}{tail}");
-    }
-    word.to_string()
-}
-
-/// From the word list, keeping a capital first letter.
-fn lookup(word: &str) -> Option<String> {
-    let lower = word.to_lowercase();
-    let fixed = WORDS.iter().find(|(w, _)| *w == lower)?.1;
-    Some(if word.starts_with(char::is_uppercase) {
-        let mut chars = fixed.chars();
-        chars
-            .next()
-            .map(|c| c.to_uppercase().chain(chars).collect())
-            .unwrap_or_default()
-    } else {
-        fixed.to_string()
-    })
-}
-
-/// Endings that only go one way: canci?n, decisi?n, ten?a, ser?an.
-fn by_ending(word: &str) -> Option<String> {
-    let lower = word.to_lowercase();
-    for (ending, fixed) in [
-        ("ci?n", "ción"),
-        ("si?n", "sión"),
-        ("xi?n", "xión"),
-        ("ci?nes", "ciones"),
-        ("?a", "ía"),
-        ("?as", "ías"),
-        ("?amos", "íamos"),
-        ("?an", "ían"),
-    ] {
-        if lower.ends_with(ending) && lower.matches('?').count() == 1 {
-            let stem = &word[..word.len() - ending.len()];
-            // "?a" alone would match anything: the letter before has to be a consonant (ten?a).
-            if ending.starts_with('?')
-                && !stem.ends_with(|c: char| c.is_alphabetic() && !"aeiouAEIOU".contains(c))
-            {
-                return None;
-            }
-            return Some(format!("{stem}{fixed}"));
+    let mut text = vec![];
+    for line in lines {
+        // The box around the line's words, with a little room: letters touch its edges.
+        let corners = line.iter().flat_map(|w| w.corners());
+        let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+        for p in corners {
+            (x0, y0, x1, y1) = (x0.min(p.x), y0.min(p.y), x1.max(p.x), y1.max(p.y));
+        }
+        let pad = (y1 - y0) * 0.15;
+        let x0 = (x0 - pad).max(0.0) as u32;
+        let y0 = (y0 - pad).max(0.0) as u32;
+        let x1 = ((x1 + pad) as u32).min(image.width());
+        let y1 = ((y1 + pad) as u32).min(image.height());
+        if x1 <= x0 + 2 || y1 <= y0 + 2 {
+            continue;
+        }
+        let crop = image::imageops::crop_imm(image, x0, y0, x1 - x0, y1 - y0).to_image();
+        let read = read_line(reader, &crop)?;
+        if !read.trim().is_empty() {
+            text.push(read.trim().to_string());
         }
     }
-    None
+    Ok(text.join("\n"))
+}
+
+/// One line of text, read by PaddleOCR.
+fn read_line(reader: &Reader, line: &image::RgbImage) -> Result<String, String> {
+    let width = (line.width() as f32 * LINE_HEIGHT as f32 / line.height() as f32)
+        .round()
+        .clamp(16.0, 4000.0) as u32;
+    let small = image::imageops::resize(
+        line,
+        width,
+        LINE_HEIGHT,
+        image::imageops::FilterType::Triangle,
+    );
+    // -1..1 per channel.
+    let (w, h) = (width as usize, LINE_HEIGHT as usize);
+    let mut input = vec![0f32; 3 * w * h];
+    for (i, pixel) in small.pixels().enumerate() {
+        for c in 0..3 {
+            input[c * w * h + i] = pixel[c] as f32 / 127.5 - 1.0;
+        }
+    }
+    let input = Tensor::from_data(&[1, 3, h, w], input);
+    // [1, steps, characters]: how likely each character is at each step.
+    let output: NdTensor<f32, 3> = reader
+        .model
+        .run_one(input.view().into(), None)
+        .map_err(|e| e.to_string())?
+        .try_into()
+        .map_err(|e: rten::TryFromValueError| e.to_string())?;
+    let [_, steps, classes] = output.shape();
+    let mut text = String::new();
+    let mut last = 0;
+    for step in 0..steps {
+        let best = (0..classes)
+            .max_by(|&a, &b| output[[0, step, a]].total_cmp(&output[[0, step, b]]))
+            .unwrap_or(0);
+        // A repeat of the previous step is the same letter, unless "nothing" came between.
+        if best != 0
+            && best != last
+            && let Some(&c) = reader.chars.get(best)
+        {
+            text.push(c);
+        }
+        last = best;
+    }
+    Ok(text)
 }
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn accents() {
-        let fix = super::fix_accents;
-        assert_eq!(fix("est? en marcha"), "está en marcha");
-        assert_eq!(fix("La canci?n y la decisi?n"), "La canción y la decisión");
-        assert_eq!(fix("Qu? pasa? ten?a raz?n."), "Qué pasa? tenía razón.");
-        assert_eq!(fix("¿Vienes ma?ana?"), "¿Vienes mañana?");
-        assert_eq!(fix("Hola?"), "Hola?");
-        assert_eq!(fix("x?y"), "x?y");
-    }
-
     // OCR_TEST_IMAGE=photo.png cargo test --release ocr_image -- --ignored --nocapture
     #[test]
     #[ignore]

@@ -1,14 +1,15 @@
-// Remove background: ISNet (general use, Apache 2.0) finds the subject and everything else
-// becomes transparent. Runs offline with rten; the model (~170 MB) is downloaded the first time.
+// Remove background: BiRefNet (general, lite; MIT) finds the subject and everything else
+// becomes transparent. Runs offline with rten; the model (~220 MB) is downloaded the first time.
 
 use rten_tensor::prelude::*;
 use rten_tensor::{NdTensor, Tensor};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
-const MODEL: &str = "isnet-general-use.onnx";
-const MODEL_URL: &str =
-    "https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-general-use.onnx";
+const MODEL: &str = "BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx";
+const MODEL_URL: &str = "https://github.com/danielgatis/rembg/releases/download/v0.0.0/BiRefNet-general-bb_swin_v1_tiny-epoch_232.onnx";
+/// The model used before: much worse with light clothes; deleted to free its 170 MB.
+const OLD_MODEL: &str = "isnet-general-use.onnx";
 const SIZE: usize = 1024;
 
 pub const EXTS: &[&str] = &["jpg", "jpeg", "png", "webp", "bmp"];
@@ -19,16 +20,10 @@ pub fn supported(path: &Path) -> bool {
         .is_some_and(|e| EXTS.contains(&e.to_lowercase().as_str()))
 }
 
-/// cutswitch already downloaded the same model: use it instead of downloading it again.
 fn model_path() -> Result<PathBuf, String> {
-    let old = crate::config::cache_dir()
-        .with_file_name("cutswitch")
-        .join("models")
-        .join(MODEL);
-    if old.exists() && !crate::models::dir().join(MODEL).exists() {
-        return Ok(old);
-    }
-    crate::models::get(MODEL, MODEL_URL)
+    let path = crate::models::get(MODEL, MODEL_URL)?;
+    let _ = std::fs::remove_file(crate::models::dir().join(OLD_MODEL));
+    Ok(path)
 }
 
 /// Loaded once; one image at a time, so the memory stays at one run's worth.
@@ -69,13 +64,14 @@ fn mask(rgb: &image::RgbImage) -> Result<image::GrayImage, String> {
         SIZE as u32,
         image::imageops::FilterType::Triangle,
     );
-    // Same preprocessing as rembg: 0..1 by the brightest value, minus the mean.
+    // Same preprocessing as rembg: 0..1 by the brightest value, then ImageNet's mean and spread.
     let max = small.as_raw().iter().copied().max().unwrap_or(1).max(1) as f32;
     let mean = [0.485, 0.456, 0.406];
+    let std = [0.229, 0.224, 0.225];
     let mut input = vec![0f32; 3 * SIZE * SIZE];
     for (i, pixel) in small.pixels().enumerate() {
         for c in 0..3 {
-            input[c * SIZE * SIZE + i] = pixel[c] as f32 / max - mean[c];
+            input[c * SIZE * SIZE + i] = (pixel[c] as f32 / max - mean[c]) / std[c];
         }
     }
     let input = Tensor::from_data(&[1, 3, SIZE, SIZE], input);
@@ -90,7 +86,8 @@ fn mask(rgb: &image::RgbImage) -> Result<image::GrayImage, String> {
         .map_err(|e: rten::TryFromValueError| e.to_string())?;
     drop(model);
 
-    let pred: Vec<f32> = output.iter().copied().collect();
+    // The model gives scores; the sigmoid turns them into 0..1.
+    let pred: Vec<f32> = output.iter().map(|v| 1.0 / (1.0 + (-v).exp())).collect();
     let (lo, hi) = pred
         .iter()
         .fold((f32::MAX, f32::MIN), |(lo, hi), &v| (lo.min(v), hi.max(v)));
@@ -129,7 +126,10 @@ pub fn remove_background(file: &Path) -> Result<PathBuf, String> {
         image::Rgba([r, g, b, mask.get_pixel(x, y)[0]])
     });
     let out = output_path(file);
-    rgba.save(&out).map_err(|e| e.to_string())?;
+    // Written aside and renamed, so nobody opens it half written.
+    let part = out.with_extension("part.png");
+    rgba.save(&part).map_err(|e| e.to_string())?;
+    std::fs::rename(&part, &out).map_err(|e| e.to_string())?;
     Ok(out)
 }
 

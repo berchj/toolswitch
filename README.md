@@ -14,7 +14,7 @@ does nothing at all.
 | Tool | What it does | Shortcut (Linux · Windows · macOS) |
 |---|---|---|
 | Clipboard history | Keeps what you copy; search it and paste an old text. Pin the ones you use often. | Super+Shift+V · Ctrl+Alt+V · Cmd+Option+V |
-| Text from screen | Select part of the screen and copy the text in it (OCR, letters without accents). | Super+Shift+X · Ctrl+Alt+X · Cmd+Option+X |
+| Text from screen | Select part of the screen and copy the text in it (OCR, accents and ñ included, 30+ Latin-script languages). | Super+Shift+X · Ctrl+Alt+X · Cmd+Option+X |
 | Wallpapers | Pick your wallpapers, switch them with a shortcut or every few minutes. | Super+Shift+W, Super+W (random), Super+. / Super+, |
 | Reminders | Write "in 20 min call Juan" or "at 15:30 meeting" (English or Spanish). | Super+Shift+R · Ctrl+Alt+R · Cmd+Option+R |
 | Breaks | Reminds you to rest your eyes (20-20-20) or works as a Pomodoro timer. | |
@@ -24,8 +24,8 @@ does nothing at all.
 | Tool | What it does |
 |---|---|
 | Compress | Smaller JPG, PNG, PDF and Office files, saved next to the original as name-min. |
-| Remove background | Transparent PNG of any photo, with an AI model (downloaded once, 170 MB). |
-| Sign PDF | Draw your signature once; drop PDFs and get name-signed.pdf with it. |
+| Remove background | Transparent PNG of any photo, with an AI model (downloaded once, 220 MB). |
+| Sign PDF | Draw your signature once; drop PDFs, drag the signature to its place on the page and get name-signed.pdf. |
 | Tidy downloads | Moves downloads to Documents, Pictures, Videos... by type. Every move can be undone. Off by default. |
 | Backup | Copies the folders you pick to another disk every day. Only what changed; nothing is deleted there. Off by default. |
 
@@ -79,9 +79,10 @@ macOS.
 
 ## Notes per system
 
-- **Linux:** made for GNOME on X11 (shortcuts are GNOME custom keybindings; the tray needs the
-  AppIndicator extension, which Ubuntu has). On Wayland, Text from screen can't take the
-  screenshot yet.
+- **Linux:** made for GNOME (shortcuts are GNOME custom keybindings; the tray needs the
+  AppIndicator extension, which Ubuntu has). The window runs through XWayland on Wayland. There,
+  Text from screen takes the screenshot with gnome-screenshot; without it, the screenshot portal
+  asks for permission each time.
 - **Windows:** Windows already uses many Windows-key shortcuts, so the defaults are Ctrl+Alt.
 - **macOS:** the app isn't signed yet: the first time, right-click it and choose Open (on
   macOS 15, then System Settings > Privacy & Security > Open Anyway). Text from screen needs
@@ -109,4 +110,4 @@ COMPRESS_TEST_DIR=some/folder  cargo test --release compress_folder -- --ignored
 
 ## License
 
-MIT. The background remover uses ISNet (Apache 2.0); text from screen uses ocrs (MIT/Apache 2.0).
+MIT. The background remover uses BiRefNet (MIT); text from screen uses ocrs (MIT/Apache 2.0) to find the lines and PaddleOCR PP-OCRv5 Latin (Apache 2.0) to read them.
