@@ -107,9 +107,9 @@ impl crate::Page for TranscribePage {
         ui.horizontal(|ui| {
             let before = self.settings.quality;
             ui.radio_value(&mut self.settings.quality, Quality::Fast, "Fast")
-                .on_hover_text("Good for clear voice notes. Downloads 77 MB the first time.");
+                .on_hover_text("Quicker, with more mistakes. Downloads 77 MB the first time.");
             ui.radio_value(&mut self.settings.quality, Quality::Best, "Best quality")
-                .on_hover_text("Fewer mistakes with names and noise, about 3 times slower. Downloads 250 MB the first time.");
+                .on_hover_text("Far fewer mistakes, a little slower. Downloads 250 MB the first time.");
             if self.settings.quality != before {
                 let _ = config::write_json(&settings_file(), &self.settings);
             }

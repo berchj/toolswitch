@@ -17,11 +17,12 @@ use std::path::{Path, PathBuf};
 
 const HF: &str = "https://huggingface.co/onnx-community";
 
-/// Fast: Whisper base (~77 MB). Best: Whisper small (~250 MB), ~3x slower but fewer mistakes.
+/// Fast: Whisper base (~77 MB). Best: Whisper small (~250 MB), ~1.5x slower but far fewer
+/// mistakes in Spanish, so it's the default.
 #[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize, Default)]
 pub enum Quality {
-    #[default]
     Fast,
+    #[default]
     Best,
 }
 

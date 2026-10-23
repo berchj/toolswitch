@@ -26,24 +26,21 @@ pub fn supported(path: &Path) -> bool {
 /// The file's sound as samples in -1..1, one channel, 16 000 per second.
 pub fn read(path: &Path) -> Result<Vec<f32>, String> {
     let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
-    let stream = MediaSourceStream::new(Box::new(file), Default::default());
-    let mut hint = Hint::new();
-    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-        hint.with_extension(ext);
-    }
-    let mut format = symphonia::default::get_probe()
-        .format(
-            &hint,
-            stream,
-            &FormatOptions::default(),
-            &MetadataOptions::default(),
-        )
-        .map_err(|_| "Not an audio file this can read".to_string())?
-        .format;
+    let mut format = match probe(Box::new(file), path) {
+        Ok(format) => format,
+        // WhatsApp videos describe their sound in a way symphonia refuses; a copy in memory
+        // with that one byte fixed reads fine.
+        Err(_) => std::fs::read(path)
+            .ok()
+            .and_then(|mut data| fix_mp4_sound(&mut data).then_some(data))
+            .and_then(|data| probe(Box::new(std::io::Cursor::new(data)), path).ok())
+            .ok_or("Not an audio file this can read")?,
+    };
     let track = format
         .tracks()
         .iter()
-        .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+        // Videos list the picture too: the sound is the track with a sample rate.
+        .find(|t| t.codec_params.codec != CODEC_TYPE_NULL && t.codec_params.sample_rate.is_some())
         .ok_or("The file has no sound")?;
     let track_id = track.id;
     let params = track.codec_params.clone();
@@ -93,6 +90,78 @@ pub fn read(path: &Path) -> Result<Vec<f32>, String> {
         return Err("The file has no sound".into());
     }
     Ok(resample(&mono, rate, RATE))
+}
+
+fn probe(
+    source: Box<dyn symphonia::core::io::MediaSource>,
+    path: &Path,
+) -> Result<Box<dyn symphonia::core::formats::FormatReader>, Error> {
+    let stream = MediaSourceStream::new(source, Default::default());
+    let mut hint = Hint::new();
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        hint.with_extension(ext);
+    }
+    let probed = symphonia::default::get_probe().format(
+        &hint,
+        stream,
+        &FormatOptions::default(),
+        &MetadataOptions::default(),
+    )?;
+    Ok(probed.format)
+}
+
+/// MP4 sound tracks carry an "SL config" that symphonia only accepts as "predefined: MP4"
+/// (2). WhatsApp writes "custom" (0) with timing details nobody needs to read the sound, so
+/// it's set to 2 in each esds box. False when there was nothing to fix.
+fn fix_mp4_sound(data: &mut [u8]) -> bool {
+    // A descriptor: tag, then its length in 1 to 4 bytes of 7 bits.
+    fn header(data: &[u8], at: usize) -> Option<(u8, usize, usize)> {
+        let tag = *data.get(at)?;
+        let mut len = 0;
+        for i in 1..=4 {
+            let b = *data.get(at + i)?;
+            len = (len << 7) | (b & 0x7f) as usize;
+            if b & 0x80 == 0 {
+                return Some((tag, len, at + i + 1));
+            }
+        }
+        None
+    }
+    let mut fixed = false;
+    let mut from = 0;
+    while let Some(found) = data[from..].windows(4).position(|w| w == b"esds") {
+        let start = from + found;
+        from = start + 4;
+        // The box: size, "esds", version and flags, then the ES descriptor (tag 3).
+        let Some((3, es_len, body)) = header(data, start + 8) else {
+            continue;
+        };
+        let end = (body + es_len).min(data.len());
+        let Some(&flags) = data.get(body + 2) else {
+            continue;
+        };
+        let mut at = body + 3;
+        if flags & 0x80 != 0 {
+            at += 2;
+        }
+        if flags & 0x40 != 0 {
+            at += 1 + data.get(at).copied().unwrap_or(0) as usize;
+        }
+        if flags & 0x20 != 0 {
+            at += 2;
+        }
+        while at < end {
+            let Some((tag, len, inner)) = header(data, at) else {
+                break;
+            };
+            if tag == 6 && len >= 1 && inner < end && data[inner] != 2 {
+                data[inner] = 2;
+                fixed = true;
+            }
+            at = inner + len;
+        }
+    }
+    fixed
 }
 
 /// The next packet of the track, None at the end of the file.
