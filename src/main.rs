@@ -557,17 +557,17 @@ impl App {
                     .max_height(ui.available_height() - footer)
                     .auto_shrink([false, true])
                     .show(ui, |ui| {
-                        ui.spacing_mut().item_spacing.y = 2.0;
+                        // Compact, so every tool fits without scrolling.
+                        ui.spacing_mut().item_spacing.y = 1.0;
                         for (group, items) in NAV {
                             if !group.is_empty() {
-                                ui.add_space(8.0);
+                                ui.add_space(5.0);
                                 ui.horizontal(|ui| {
                                     ui.add_space(10.0);
                                     ui.label(
                                         egui::RichText::new(*group).size(11.0).color(theme::FAINT),
                                     );
                                 });
-                                ui.add_space(2.0);
                             }
                             for &(screen, icon, name) in *items {
                                 if nav_item(ui, icon, name, self.screen == screen, true).clicked()
@@ -623,7 +623,7 @@ fn nav_item(
     } else {
         egui::Sense::hover()
     };
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 28.0), sense);
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 24.0), sense);
     let hover = ui
         .ctx()
         .animate_bool(response.id, enabled && response.hovered());
