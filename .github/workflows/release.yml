@@ -44,7 +44,12 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal
           rustup target add ${{ matrix.target }}
+      # Calendar's Google sign-in comes built in when these secrets exist; without them the
+      # Calendar screen asks for the client file instead.
       - run: cargo build --release --locked --target ${{ matrix.target }}
+        env:
+          TOOLSWITCH_GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          TOOLSWITCH_GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
       - name: Package (Linux)
         if: runner.os == 'Linux'
         run: |

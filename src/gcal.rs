@@ -76,9 +76,10 @@ pub fn account() -> Option<String> {
 
 /// The Google client this build signs in with: (id, secret).
 fn client() -> Option<(String, String)> {
+    // A build without the secrets gets them empty: that's no client.
     if let (Some(id), Some(secret)) = (
-        option_env!("TOOLSWITCH_GOOGLE_CLIENT_ID"),
-        option_env!("TOOLSWITCH_GOOGLE_CLIENT_SECRET"),
+        option_env!("TOOLSWITCH_GOOGLE_CLIENT_ID").filter(|s| !s.is_empty()),
+        option_env!("TOOLSWITCH_GOOGLE_CLIENT_SECRET").filter(|s| !s.is_empty()),
     ) {
         return Some((id.into(), secret.into()));
     }
