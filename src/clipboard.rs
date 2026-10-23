@@ -3,8 +3,9 @@
 // clipswitch used); images are PNG files in the cache folder, with a small one for the list.
 //
 // Noticing a change costs almost nothing: X11 sends an event (XFixes), Windows and macOS keep
-// a counter. Only then is the clipboard read. Where none of that works (Wayland), the text is
-// compared every half second, like before, and images aren't kept.
+// a counter. Only then is the clipboard read. On Wayland the X11 event (through XWayland) is
+// used too, and the text is also compared every half second in case a copy doesn't reach X11.
+// Without any event, images aren't kept.
 
 use crate::config;
 use serde::{Deserialize, Serialize};
@@ -267,9 +268,11 @@ mod changes {
 
     /// Tells when the clipboard may have changed.
     pub enum Watcher {
-        /// X11: a thread sleeps until X11 says the clipboard has a new owner.
+        /// X11: a thread sleeps until X11 says the clipboard has a new owner. On Wayland the
+        /// text is also compared every half second (the bool), in case a copy from a Wayland
+        /// app doesn't reach X11; images need the event.
         #[cfg(target_os = "linux")]
-        X11(std::sync::mpsc::Receiver<()>),
+        X11(std::sync::mpsc::Receiver<()>, bool),
         /// Windows and macOS: a number the system raises at each change.
         Counter(Option<u64>),
         /// Nothing better: look every time.
@@ -280,7 +283,8 @@ mod changes {
         pub fn new() -> Self {
             #[cfg(target_os = "linux")]
             if let Some(events) = x11::listen() {
-                return Watcher::X11(events);
+                let wayland = std::env::var("XDG_SESSION_TYPE").is_ok_and(|t| t == "wayland");
+                return Watcher::X11(events, wayland);
             }
             match counter() {
                 Some(n) => Watcher::Counter(Some(n)),
@@ -293,12 +297,14 @@ mod changes {
         pub fn wait(&mut self, timeout: Duration) -> Option<bool> {
             match self {
                 #[cfg(target_os = "linux")]
-                Watcher::X11(events) => {
-                    events.recv_timeout(timeout).ok()?;
-                    // A copy often comes with several events: take them all.
-                    while events.try_recv().is_ok() {}
-                    Some(true)
-                }
+                Watcher::X11(events, poll_too) => match events.recv_timeout(timeout) {
+                    Ok(()) => {
+                        // A copy often comes with several events: take them all.
+                        while events.try_recv().is_ok() {}
+                        Some(true)
+                    }
+                    Err(_) => poll_too.then_some(false),
+                },
                 Watcher::Counter(last) => {
                     std::thread::sleep(timeout);
                     let now = counter();
@@ -344,10 +350,6 @@ mod changes {
 
         /// Asks X11 to tell when the CLIPBOARD changes owner; each time, a () arrives.
         pub fn listen() -> Option<Receiver<()>> {
-            // On Wayland the X11 clipboard misses copies from Wayland apps.
-            if std::env::var("XDG_SESSION_TYPE").is_ok_and(|t| t == "wayland") {
-                return None;
-            }
             let (conn, screen) = x11rb::connect(None).ok()?;
             conn.xfixes_query_version(5, 0).ok()?.reply().ok()?;
             let root = conn.setup().roots[screen].root;
@@ -405,3 +407,4 @@ fn now() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_millis() as u64)
 }
+
