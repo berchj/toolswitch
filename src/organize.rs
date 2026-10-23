@@ -177,13 +177,13 @@ fn age(meta: &std::fs::Metadata, now: SystemTime) -> Duration {
 
 /// Tidies the Downloads folder once, with these settings. Returns the moves and how many
 /// files went (moved or to the trash).
-fn tidy(settings: &Settings, now: SystemTime) -> (Vec<Move>, usize) {
-    let downloads = crate::power::downloads_dir();
+/// Tidies the `downloads` folder (a parameter so the tests can use a folder of their own).
+fn tidy(downloads: &Path, settings: &Settings, now: SystemTime) -> (Vec<Move>, usize) {
     // A wrong user-dirs.dirs can point "Downloads" at the home folder: never tidy that.
-    if downloads.parent().is_none() || config::home().starts_with(&downloads) {
+    if downloads.parent().is_none() || config::home().starts_with(downloads) {
         return (vec![], 0);
     }
-    let Ok(entries) = std::fs::read_dir(&downloads) else {
+    let Ok(entries) = std::fs::read_dir(downloads) else {
         return (vec![], 0);
     };
     let mut moves = vec![];
@@ -246,7 +246,7 @@ fn start(ctx: Option<egui::Context>) -> bool {
     }
     let settings = state().settings.clone();
     std::thread::spawn(move || {
-        let (moves, count) = tidy(&settings, SystemTime::now());
+        let (moves, count) = tidy(&crate::power::downloads_dir(), &settings, SystemTime::now());
         if !moves.is_empty() {
             let mut state = state();
             state.settings.log.extend(moves);
@@ -458,14 +458,6 @@ mod tests {
         let downloads = root.join("dl");
         let docs = root.join("docs");
         std::fs::create_dir_all(&downloads).unwrap();
-        std::fs::create_dir_all(root.join("config")).unwrap();
-        std::fs::write(
-            root.join("config/user-dirs.dirs"),
-            format!("XDG_DOWNLOAD_DIR=\"{}\"\n", downloads.display()),
-        )
-        .unwrap();
-        // SAFETY: tests in this file don't read the environment at the same time.
-        unsafe { std::env::set_var("XDG_CONFIG_HOME", root.join("config")) };
 
         // Tidied "an hour from now": everything is an hour old except fresh.pdf, changed then.
         let later = SystemTime::now() + Duration::from_secs(3600);
@@ -504,7 +496,7 @@ mod tests {
             trash_after: 1,
             log: vec![],
         };
-        let (moves, count) = tidy(&settings, later);
+        let (moves, count) = tidy(&downloads, &settings, later);
         assert_eq!(count, 2);
         settings.log = moves;
         assert!(docs.join("a (2).pdf").exists());
