@@ -3,6 +3,7 @@
 // break, a long one every 4). The count starts over after the computer sleeps, but not when
 // the app just restarts.
 
+use crate::sound::{self, Sound};
 use crate::{config, desktop, theme};
 use eframe::egui;
 use serde::{Deserialize, Serialize};
@@ -169,6 +170,7 @@ fn step(woke_up: bool) -> bool {
                 "👀 Rest your eyes",
                 "Look at something far away for 20 seconds.",
             );
+            sound::play_for("breaks", Sound::Rest);
             run.restart();
         }
         (Mode::Pomodoro, false) => {
@@ -179,6 +181,7 @@ fn step(woke_up: bool) -> bool {
                 "☕ Time for a break",
                 &format!("Stand up and move for {minutes} minutes."),
             );
+            sound::play_for("breaks", Sound::Rest);
             run.on_break = true;
             run.until = now + Duration::from_secs(minutes * 60);
         }
@@ -187,6 +190,7 @@ fn step(woke_up: bool) -> bool {
                 "🍅 Back to work",
                 &format!("Next break in {} minutes.", s.work),
             );
+            sound::play_for("breaks", Sound::Work);
             run.restart();
         }
     }
@@ -319,6 +323,12 @@ impl crate::Page for BreaksPage {
                     });
                 }
             }
+            ui.add_space(8.0);
+            let sounds: &[(&str, Sound)] = match settings.mode {
+                Mode::Eyes => &[("Test", Sound::Rest)],
+                Mode::Pomodoro => &[("Test break", Sound::Rest), ("Test back to work", Sound::Work)],
+            };
+            sound::setting(ui, "breaks", sounds);
         });
         let changed = settings.mode != run.settings.mode
             || settings.every != run.settings.every

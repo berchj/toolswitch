@@ -38,6 +38,7 @@ mod services;
 mod shortcut_editor;
 mod shortcuts;
 mod sign;
+mod sound;
 mod theme;
 mod tray;
 mod updates;

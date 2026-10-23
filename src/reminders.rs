@@ -1,6 +1,7 @@
 // Quick reminders: write "in 20 min call Juan" or "at 15:30 meeting" and a notification shows
 // up at that time. No calendar, no account. Saved in reminders.json.
 
+use crate::sound::{self, Sound};
 use crate::{config, desktop, theme};
 use chrono::{DateTime, Duration, Local, NaiveTime, TimeZone};
 use eframe::egui;
@@ -66,6 +67,10 @@ pub fn tick() -> bool {
         desktop::notify(&format!("⏰ {}", r.text), "Reminder from toolswitch");
         r.done = true;
         changed = true;
+    }
+    // One sound, even if several are due at once.
+    if changed {
+        sound::play_for("reminders", Sound::Reminder);
     }
     let before = state.reminders.len();
     state
@@ -344,6 +349,9 @@ impl crate::Page for RemindersPage {
                 None => self.error = true,
             }
         }
+
+        ui.add_space(4.0);
+        sound::setting(ui, "reminders", &[("Test", Sound::Reminder)]);
 
         ui.add_space(16.0);
         let reminders = state().reminders.clone();
