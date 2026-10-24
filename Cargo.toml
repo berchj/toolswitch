@@ -48,6 +48,8 @@ xcap = "=0.9.8"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSPasteboard"] }
+# To read the pasteboard's list of types; the same version objc2-app-kit already brings.
+objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSArray", "NSEnumerator", "NSString"] }
 
 [target.'cfg(windows)'.dependencies]
 notify-rust = "=4.18.1"

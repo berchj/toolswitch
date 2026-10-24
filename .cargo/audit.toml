@@ -1,0 +1,11 @@
+# Exceptions for `cargo audit`, each with its reason. Remove them when the library is updated.
+[advisories]
+ignore = [
+    # zip 8.6.0: extract() can write outside the destination folder or keep SUID bits.
+    # toolswitch never calls extract(): Office files are read entry by entry in memory
+    # (compress.rs). Fixed in zip 9.0, released 2026-10-09 and patched five times since;
+    # move to 9.x once it settles.
+    "RUSTSEC-2026-0367",
+    "RUSTSEC-2026-0368",
+    "RUSTSEC-2026-0369",
+]

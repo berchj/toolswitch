@@ -121,7 +121,14 @@ fn call(
     path: &str,
     body: Option<&serde_json::Value>,
 ) -> Result<serde_json::Value, String> {
-    let quote = |s: &str| s.replace('\\', "\\\\").replace('"', "\\\"");
+    // Inside quotes, curl's config reads \\ \" \n and \r as escapes: a pasted key with a line
+    // break can't add options of its own.
+    let quote = |s: &str| {
+        s.replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', "\\n")
+            .replace('\r', "\\r")
+    };
     let mut curl = desktop::command("curl");
     curl.args(["-sS", "--max-time", "20", "-K", "-", "-w", "\n%{http_code}"])
         .args(["-H", "Accept: application/json"]);

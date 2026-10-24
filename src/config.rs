@@ -197,12 +197,32 @@ pub fn update(change: impl FnOnce(&mut Config)) -> Config {
     })
 }
 
-/// Writes to a temporary file first, so a crash never leaves half a file.
+/// Writes to a temporary file first, so a crash never leaves half a file. Only this user may
+/// read it: the settings hold the clipboard history and sign-in tokens.
 pub fn write_json(path: &Path, value: &impl Serialize) -> std::io::Result<()> {
-    std::fs::create_dir_all(path.parent().unwrap())?;
+    private_dir(path.parent().unwrap())?;
     let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, serde_json::to_vec_pretty(value)?)?;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    std::io::Write::write_all(&mut options.open(&tmp)?, &serde_json::to_vec_pretty(value)?)?;
     std::fs::rename(&tmp, path)
+}
+
+/// Creates the folder, and on Linux and macOS lets only this user open it, so what's inside
+/// (copied texts and images, the signature, tokens) stays private on a shared computer.
+pub fn private_dir(dir: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
 }
 
 /// The real place of a user folder on Windows, which may be moved (to OneDrive, say).

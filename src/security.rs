@@ -638,7 +638,14 @@ fn ask_claude(key: &str, report: &str) -> Result<String, String> {
         "system": PROMPT,
         "messages": [{"role": "user", "content": report}],
     });
-    let quote = |s: &str| s.replace('\\', "\\\\").replace('"', "\\\"");
+    // Inside quotes, curl's config reads \\ \" \n and \r as escapes: a pasted key with a line
+    // break can't add options of its own.
+    let quote = |s: &str| {
+        s.replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', "\\n")
+            .replace('\r', "\\r")
+    };
     let mut curl = desktop::command("curl");
     curl.args(["-sS", "--max-time", "300", "-K", "-", "-w", "\n%{http_code}"])
         .arg(API)
@@ -802,7 +809,7 @@ impl crate::Page for SecurityPage {
                 ui.label(egui::RichText::new("Ask Claude for a plan").strong());
                 if self.saved.api_key.is_empty() {
                     ui.label(
-                        egui::RichText::new("With an Anthropic API key, Claude explains the results and writes the steps for this computer. Only the list below is sent: no files, no names.")
+                        egui::RichText::new("With an Anthropic API key, Claude explains the results and writes the steps for this computer. Only the list below is sent to Anthropic: no files, no names.")
                             .color(theme::MUTED),
                     );
                     ui.horizontal(|ui| {

@@ -12,6 +12,9 @@ pub const IMAGE_EXTS: &[&str] = &["jpg", "jpeg", "png"];
 pub const DOC_EXTS: &[&str] = &["docx", "pptx", "xlsx", "odt", "odp", "ods", "pdf"];
 // Under 3% smaller isn't worth a second file.
 const WORTH_IT: f64 = 0.97;
+/// A document is unpacked in memory; one that unpacks to more than this (a "zip bomb", made
+/// to fill the memory) is left as it is.
+const MAX_UNZIPPED: u64 = 512 << 20;
 
 #[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -292,14 +295,27 @@ fn compress_office(file: &Path, settings: &Settings) -> Result<Outcome, String> 
 
     let mut entries: Vec<(String, Vec<u8>, bool)> = vec![];
     let mut changed = false;
+    let mut unzipped = 0;
     for i in 0..zip.len() {
         let mut entry = zip.by_index(i).map_err(|e| e.to_string())?;
         if entry.is_dir() {
             continue;
         }
         let name = entry.name().to_string();
-        let mut bytes = vec![];
-        entry.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+        // The size the file says it has first, then the bytes really read (it may lie).
+        let too_big = || "This document unpacks to more than 512 MB; it was left as it is.".to_string();
+        if unzipped + entry.size() > MAX_UNZIPPED {
+            return Err(too_big());
+        }
+        let mut bytes = Vec::with_capacity(entry.size() as usize);
+        (&mut entry)
+            .take(MAX_UNZIPPED - unzipped + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|e| e.to_string())?;
+        unzipped += bytes.len() as u64;
+        if unzipped > MAX_UNZIPPED {
+            return Err(too_big());
+        }
         let is_media = ["word/media/", "ppt/media/", "xl/media/", "Pictures/"]
             .iter()
             .any(|m| name.starts_with(m));

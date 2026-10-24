@@ -111,11 +111,16 @@ impl History {
     /// Starts the watcher; `on_change` runs after each new entry.
     pub fn watch(&self, on_change: impl Fn() + Send + 'static) {
         let history = self.clone();
+        // Made before this change, the images folder may still be open to other users.
+        if images_dir().exists() {
+            let _ = config::private_dir(&images_dir());
+        }
         std::thread::spawn(move || {
             let Ok(mut clipboard) = arboard::Clipboard::new() else {
                 return;
             };
             let mut changes = changes::Watcher::new();
+            let mut secrets = secret::Checker::new();
             // What's already on the clipboard at startup isn't new.
             let mut last_text = clipboard.get_text().unwrap_or_default();
             let mut last_image: Option<String> = None;
@@ -133,6 +138,9 @@ impl History {
                         continue;
                     }
                     last_text = text.clone();
+                    if secrets.is_secret() {
+                        continue;
+                    }
                     if !text.trim().is_empty() && text.chars().count() <= MAX_CHARS {
                         history.add(Entry {
                             text,
@@ -143,6 +151,7 @@ impl History {
                         on_change();
                     }
                 } else if changed
+                    && !secrets.is_secret()
                     && let Ok(image) = clipboard.get_image()
                     && let Some(picture) = save_image(&image)
                     && last_image.as_ref() != Some(&picture.id)
@@ -208,7 +217,7 @@ fn save_image(image: &arboard::ImageData) -> Option<Picture> {
         image.height as u32,
         image.bytes.to_vec(),
     )?;
-    std::fs::create_dir_all(images_dir()).ok()?;
+    config::private_dir(&images_dir()).ok()?;
     if !image_file(&id).exists() {
         rgba.save(image_file(&id)).ok()?;
         image::imageops::thumbnail(&rgba, THUMB, THUMB * rgba.height() / rgba.width().max(1))
@@ -377,6 +386,176 @@ mod changes {
                 }
             });
             Some(receiver)
+        }
+    }
+}
+
+// ---------- secrets ----------
+
+/// Password managers (KeePassXC, KeePass, 1Password and others) mark what they copy so that
+/// clipboard histories leave it out. Those copies are never kept.
+mod secret {
+    pub struct Checker {
+        #[cfg(target_os = "linux")]
+        x11: Option<x11::Targets>,
+    }
+
+    impl Checker {
+        pub fn new() -> Self {
+            Checker {
+                #[cfg(target_os = "linux")]
+                x11: x11::Targets::new(),
+            }
+        }
+
+        /// Is what's on the clipboard now marked as a secret?
+        pub fn is_secret(&mut self) -> bool {
+            #[cfg(target_os = "linux")]
+            {
+                self.x11.as_ref().is_some_and(|x11| {
+                    x11.list()
+                        .iter()
+                        .any(|t| t == "x-kde-passwordManagerHint")
+                })
+            }
+            #[cfg(windows)]
+            {
+                ["ExcludeClipboardContentFromMonitorProcessing", "Clipboard Viewer Ignore"]
+                    .iter()
+                    .any(|name| windows_format_present(name))
+            }
+            #[cfg(target_os = "macos")]
+            {
+                use objc2_app_kit::NSPasteboard;
+                NSPasteboard::generalPasteboard().types().is_some_and(|types| {
+                    types.iter().any(|t| {
+                        let t = t.to_string();
+                        t == "org.nspasteboard.ConcealedType" || t == "org.nspasteboard.TransientType"
+                    })
+                })
+            }
+            #[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
+            {
+                false
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    fn windows_format_present(name: &str) -> bool {
+        use windows_sys::Win32::System::DataExchange::{
+            IsClipboardFormatAvailable, RegisterClipboardFormatW,
+        };
+        let wide: Vec<u16> = name.encode_utf16().chain([0]).collect();
+        // SAFETY: `wide` is a string ending in 0 that lives through the call; the other call
+        // only takes a number.
+        unsafe {
+            let format = RegisterClipboardFormatW(wide.as_ptr());
+            format != 0 && IsClipboardFormatAvailable(format) != 0
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    mod x11 {
+        use std::time::{Duration, Instant};
+        use x11rb::connection::Connection;
+        use x11rb::protocol::Event;
+        use x11rb::protocol::xproto::{
+            Atom, AtomEnum, ConnectionExt as _, CreateWindowAux, WindowClass,
+        };
+        use x11rb::rust_connection::RustConnection;
+
+        /// The formats the clipboard's owner offers, asked through a hidden window of our own.
+        pub struct Targets {
+            conn: RustConnection,
+            window: u32,
+            clipboard: Atom,
+            targets: Atom,
+            property: Atom,
+        }
+
+        impl Targets {
+            pub fn new() -> Option<Self> {
+                let (conn, screen) = x11rb::connect(None).ok()?;
+                let root = conn.setup().roots[screen].root;
+                let window = conn.generate_id().ok()?;
+                conn.create_window(
+                    x11rb::COPY_DEPTH_FROM_PARENT,
+                    window,
+                    root,
+                    0,
+                    0,
+                    1,
+                    1,
+                    0,
+                    WindowClass::INPUT_ONLY,
+                    x11rb::COPY_FROM_PARENT,
+                    &CreateWindowAux::new(),
+                )
+                .ok()?;
+                let atom = |name: &[u8]| -> Option<Atom> {
+                    Some(conn.intern_atom(false, name).ok()?.reply().ok()?.atom)
+                };
+                let (clipboard, targets, property) =
+                    (atom(b"CLIPBOARD")?, atom(b"TARGETS")?, atom(b"TOOLSWITCH_TARGETS")?);
+                conn.flush().ok()?;
+                Some(Targets {
+                    conn,
+                    window,
+                    clipboard,
+                    targets,
+                    property,
+                })
+            }
+
+            /// The names of the formats; empty if the owner doesn't answer in time.
+            pub fn list(&self) -> Vec<String> {
+                self.ask().unwrap_or_default()
+            }
+
+            fn ask(&self) -> Option<Vec<String>> {
+                let conn = &self.conn;
+                conn.convert_selection(
+                    self.window,
+                    self.clipboard,
+                    self.targets,
+                    self.property,
+                    x11rb::CURRENT_TIME,
+                )
+                .ok()?;
+                conn.flush().ok()?;
+                let deadline = Instant::now() + Duration::from_millis(300);
+                loop {
+                    match conn.poll_for_event().ok()? {
+                        Some(Event::SelectionNotify(e)) if e.requestor == self.window => {
+                            if e.property == x11rb::NONE {
+                                return None;
+                            }
+                            break;
+                        }
+                        Some(_) => {}
+                        None if Instant::now() > deadline => return None,
+                        None => std::thread::sleep(Duration::from_millis(5)),
+                    }
+                }
+                let reply = conn
+                    .get_property(true, self.window, self.property, AtomEnum::ATOM, 0, 4096)
+                    .ok()?
+                    .reply()
+                    .ok()?;
+                let atoms: Vec<Atom> = reply.value32()?.collect();
+                let cookies: Vec<_> = atoms
+                    .iter()
+                    .filter_map(|&a| conn.get_atom_name(a).ok())
+                    .collect();
+                Some(
+                    cookies
+                        .into_iter()
+                        .filter_map(|c| c.reply().ok())
+                        .map(|r| String::from_utf8_lossy(&r.name).into_owned())
+                        .collect(),
+                )
+            }
         }
     }
 }

@@ -12,10 +12,13 @@ mod imp {
     use std::os::unix::net::{UnixListener, UnixStream};
     use std::path::PathBuf;
 
+    /// In a folder only this user can open: other users of the computer can't send commands.
+    /// macOS and some Linux sessions have no XDG_RUNTIME_DIR; the cache folder is used then
+    /// (never /tmp, which everyone shares).
     fn socket() -> PathBuf {
         std::env::var_os("XDG_RUNTIME_DIR")
             .map(PathBuf::from)
-            .unwrap_or_else(std::env::temp_dir)
+            .unwrap_or_else(crate::config::cache_dir)
             .join("toolswitch.sock")
     }
 
@@ -30,6 +33,9 @@ mod imp {
     /// Becomes the running app: each command another launch sends is passed to `on_command`.
     pub fn listen(on_command: impl Fn(String) + Send + 'static) -> std::io::Result<()> {
         let path = socket();
+        if std::env::var_os("XDG_RUNTIME_DIR").is_none() {
+            crate::config::private_dir(path.parent().unwrap())?;
+        }
         // Left behind by an app that crashed (send() already found nobody listening).
         let _ = std::fs::remove_file(&path);
         let listener = UnixListener::bind(&path)?;

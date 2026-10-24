@@ -343,7 +343,7 @@ impl Default for SignPage {
 
 impl SignPage {
     fn set_signature(&mut self, image: image::RgbaImage) {
-        if let Err(error) = std::fs::create_dir_all(config::dir())
+        if let Err(error) = config::private_dir(&config::dir())
             .and_then(|_| image.save(signature_file()).map_err(std::io::Error::other))
         {
             self.error = Some(format!("Couldn't save the signature: {error}"));

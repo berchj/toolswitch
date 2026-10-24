@@ -18,9 +18,17 @@ jobs:
         os: [ubuntu-22.04, windows-latest, macos-14]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Rust
         run: rustup toolchain install stable --profile minimal --component clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo clippy --release --locked --all-targets -- -D warnings
       - run: cargo test --release --locked
+
+  # Known security problems in the libraries (the RustSec list); exceptions in .cargo/audit.toml.
+  audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - run: cargo install cargo-audit --locked --version 0.22.2
+      - run: cargo audit

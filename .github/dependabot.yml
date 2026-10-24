@@ -1,0 +1,10 @@
+# Proposes updates of the GitHub Actions the workflows use (they're pinned to a commit), only
+# once a version is two weeks old.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
