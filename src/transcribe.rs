@@ -236,10 +236,8 @@ pub fn text_of(file: &Path, quality: Quality, progress: &dyn Fn(f32)) -> Result<
     let mut samples = audio::read(file)?;
     // Quiet recordings are brought up to full volume.
     let peak = samples.iter().fold(0f32, |m, s| m.max(s.abs()));
-    if peak > 0.0 && peak < 0.9 {
-        let gain = 0.9 / peak;
-        samples.iter_mut().for_each(|s| *s *= gain);
-    }
+    let gain = if peak > 0.0 && peak < 0.9 { 0.9 / peak } else { 1.0 };
+    samples.iter_mut().for_each(|s| *s *= gain);
 
     let tokenizer = tokenizer()?;
     let encoder_path = model(quality, "encoder")?;
@@ -275,9 +273,10 @@ pub fn text_of(file: &Path, quality: Quality, progress: &dyn Fn(f32)) -> Result<
     while offset < samples.len() {
         progress(offset as f32 / samples.len() as f32);
         let piece = &samples[offset..(offset + CHUNK).min(samples.len())];
-        // Silence makes Whisper invent text ("Thanks for watching"): skip it.
+        // Silence makes Whisper invent text ("Thanks for watching"): skip it. Measured as it
+        // was recorded, before the volume boost, or background hiss would pass for speech.
         let loud = piece.iter().map(|s| s * s).sum::<f32>() / piece.len() as f32;
-        if loud.sqrt() < 0.003 {
+        if loud.sqrt() / gain < 0.003 {
             offset += CHUNK;
             previous.clear();
             continue;
