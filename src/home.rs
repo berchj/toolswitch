@@ -103,19 +103,6 @@ const GROUPS: &[(&str, &[ToolInfo])] = &[
             },
         ],
     ),
-    (
-        "System",
-        &[
-            ToolInfo {
-                id: "power",
-                icon: "🔌",
-                name: "Shut down timer",
-                description: "Shut down, restart or sleep later, at a time, or when the downloads finish.",
-                screen: Some(Screen::Power),
-                shortcuts: &[("power", "Open")],
-            },
-        ],
-    ),
 ];
 
 /// A small card for the welcome screen. Returns true if its switch changed.
@@ -151,7 +138,7 @@ fn tile(ui: &mut egui::Ui, tool: &ToolInfo) -> bool {
 }
 
 /// Tools without a switch: they only do something when you use them.
-const ALWAYS_ON: &[&str] = &["power", "sign"];
+const ALWAYS_ON: &[&str] = &["sign"];
 
 #[derive(Default)]
 pub struct Home {

@@ -39,8 +39,7 @@ Priority: optional
 Homepage: https://berchj.github.io
 Description: Small everyday tools in one tiny app
  Clipboard history, wallpapers, text from screen, reminders, breaks, file compressor,
- background remover, PDF signing, tidy downloads, backup, clean up, PC monitor,
- shut down timer and updates. Everything runs offline, no account.
+ background remover, PDF signing and audio to text. Everything runs offline, no account.
 EOF
 
 dpkg-deb --root-owner-group --build "$root" "toolswitch_${version}_amd64.deb"

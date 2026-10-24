@@ -34,12 +34,6 @@ turned off).
 On Linux, Compress, Remove background, Sign PDF and Audio to text are also in the Files right-click menu
 (Scripts).
 
-**System**
-
-| Tool | What it does |
-|---|---|
-| Shut down timer | Shut down, restart or sleep in a while, at a time, or when the downloads finish. |
-
 Every shortcut can be changed in the Tools screen: click the keys and press new ones.
 
 ## Command line

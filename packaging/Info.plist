@@ -15,6 +15,6 @@
     <!-- Lives in the menu bar, like the other tray apps. -->
     <key>LSUIElement</key><true/>
     <key>NSScreenCaptureUsageDescription</key><string>Text from screen reads the part of the screen you select.</string>
-    <key>NSAppleEventsUsageDescription</key><string>Used to change the wallpaper and to shut down when you ask.</string>
+    <key>NSAppleEventsUsageDescription</key><string>Used to change the wallpaper.</string>
 </dict>
 </plist>

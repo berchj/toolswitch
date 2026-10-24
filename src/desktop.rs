@@ -5,10 +5,12 @@ use crate::config;
 use std::path::PathBuf;
 
 /// The program to launch. An AppImage runs from a new temporary folder each time,
-/// so point at the AppImage file itself.
+/// so point at the AppImage file itself; a snap's folder changes with each update, so point
+/// at its fixed launcher.
 fn executable() -> String {
     std::env::var("APPIMAGE")
         .ok()
+        .or_else(|| std::env::var("SNAP_NAME").ok().map(|name| format!("/snap/bin/{name}")))
         .or_else(|| {
             std::env::current_exe()
                 .ok()

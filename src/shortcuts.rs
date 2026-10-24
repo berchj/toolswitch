@@ -24,7 +24,6 @@ pub const TOOLS: &[(&str, &str, &str)] = &[
     ("sign", "toolswitch: sign PDF", "Super+Shift+S"),
     ("transcribe", "toolswitch: audio to text", "Super+Shift+A"),
     ("breaks", "toolswitch: breaks", "Super+Shift+P"),
-    ("power", "toolswitch: shut down timer", "Super+Shift+Q"),
     (
         "wallpaper-random",
         "toolswitch: random wallpaper",
@@ -114,7 +113,14 @@ mod gnome {
     const MEDIA_KEYS: &str = "org.gnome.settings-daemon.plugins.media-keys";
 
     fn gsettings(args: &[&str]) -> Result<String, String> {
-        let out = Command::new("gsettings")
+        let mut command = Command::new("gsettings");
+        // A snap brings GNOME's settings descriptions with it (snap/snapcraft.yaml).
+        if let Some(snap) = std::env::var_os("SNAP") {
+            let mut schemas = std::path::PathBuf::from(snap);
+            schemas.push("usr/share/glib-2.0/schemas");
+            command.env("GSETTINGS_SCHEMA_DIR", schemas);
+        }
+        let out = command
             .args(args)
             .output()
             .map_err(|e| e.to_string())?;

@@ -11,7 +11,6 @@ use std::sync::mpsc::Sender;
 pub enum Action {
     Send(Command),
     PauseBreaks,
-    CancelPower,
     PauseClipboard,
     ClearHistory,
     Autostart,
@@ -39,7 +38,6 @@ impl Tray {
                 let _ = self.commands.send(command.clone());
             }
             Action::PauseBreaks => crate::breaks::pause(60),
-            Action::CancelPower => crate::power::cancel(),
             Action::PauseClipboard => {
                 config::update(|c| c.clipboard_paused = !c.clipboard_paused);
             }
@@ -59,7 +57,7 @@ impl Tray {
         let show = |tool| Action::Send(Command::Show(tool));
         let mut menu = vec![];
 
-        // What's going on: next reminder, break, shut down timer.
+        // What's going on: next reminder, break.
         if let Some(r) = crate::reminders::next() {
             menu.push(Entry::Item(
                 format!("⏰ {} · {}", crate::reminders::when(r.at), label(&r.text)),
@@ -69,10 +67,6 @@ impl Tray {
         if config::enabled("breaks") {
             menu.push(Entry::Item(format!("☕ {}", crate::breaks::status()), None));
             menu.push(item("Pause breaks for 1 hour".into(), Action::PauseBreaks));
-        }
-        if let Some(power) = crate::power::status() {
-            menu.push(Entry::Item(format!("🔌 {power}"), None));
-            menu.push(item("Cancel it".into(), Action::CancelPower));
         }
         if !menu.is_empty() {
             menu.push(Entry::Separator);

@@ -1,0 +1,86 @@
+name: toolswitch
+title: toolswitch
+base: core22
+adopt-info: toolswitch
+summary: 9 small everyday tools in one tray app, offline
+description: |
+  toolswitch puts nine everyday tools in one small app that waits in the tray, each with its
+  own keyboard shortcut:
+
+  - Clipboard history (texts and images)
+  - Text from screen (OCR)
+  - Audio to text (Whisper, offline)
+  - Remove background from photos (offline)
+  - Sign PDF
+  - Compress images, PDFs and Office files
+  - Wallpapers that change by themselves
+  - Reminders
+  - Breaks (rest your eyes, Pomodoro)
+
+  The AI tools run on your computer: nothing is uploaded. No account, no ads.
+website: https://berchj.github.io/toolswitch/
+source-code: https://github.com/berchj/toolswitch
+issues: https://github.com/berchj/toolswitch/issues
+contact: https://github.com/berchj/toolswitch/issues
+license: MIT
+icon: assets/icon.png
+grade: stable
+confinement: strict
+
+apps:
+  toolswitch:
+    command: bin/toolswitch
+    extensions: [gnome]
+    # The app writes this file when "Start at login" is on.
+    autostart: toolswitch.desktop
+    desktop: share/applications/toolswitch.desktop
+    environment:
+      # The AI models (hundreds of MB) are kept once, not copied with each update.
+      XDG_CACHE_HOME: $SNAP_USER_COMMON/.cache
+    plugs:
+      - home
+      - removable-media
+      - network
+      - audio-playback
+      - gsettings
+      - unity7
+
+parts:
+  toolswitch:
+    plugin: rust
+    source: .
+    build-packages: [curl, libglib2.0-bin]
+    stage-packages:
+      - curl
+      - libglib2.0-bin
+      - libnotify-bin
+      - pulseaudio-utils
+      - poppler-utils
+      # GNOME's keyboard shortcut settings, so gsettings can write them (see shortcuts.rs).
+      - gnome-settings-daemon-common
+      # The window runs on X11; winit loads these at start.
+      - libxkbcommon-x11-0
+      - libx11-xcb1
+      - libxcursor1
+      - libxi6
+      - libxrandr2
+    # The GNOME runtime has a newer libxkbcommon, which matches its keyboard files.
+    prime:
+      - -usr/lib/x86_64-linux-gnu/libxkbcommon.so.0*
+    override-pull: |
+      craftctl default
+      # The version is the one in Cargo.toml.
+      craftctl set version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+    override-build: |
+      craftctl default
+      glib-compile-schemas $CRAFT_PART_INSTALL/usr/share/glib-2.0/schemas
+      install -Dm644 assets/icon.png $CRAFT_PART_INSTALL/share/icons/hicolor/256x256/apps/toolswitch.png
+      install -Dm644 /dev/stdin $CRAFT_PART_INSTALL/share/applications/toolswitch.desktop <<DESKTOP
+      [Desktop Entry]
+      Type=Application
+      Name=toolswitch
+      Comment=Small everyday tools in one tray app
+      Exec=toolswitch
+      Icon=\${SNAP}/share/icons/hicolor/256x256/apps/toolswitch.png
+      Categories=Utility;
+      DESKTOP

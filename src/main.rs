@@ -29,7 +29,6 @@ mod jobs;
 mod models;
 mod ocr;
 mod ocr_view;
-mod power;
 mod reminders;
 mod screen;
 mod services;
@@ -60,11 +59,10 @@ pub enum Tool {
     Transcribe,
     Reminders,
     Breaks,
-    Power,
 }
 
 impl Tool {
-    const ALL: [(Tool, &'static str); 10] = [
+    const ALL: [(Tool, &'static str); 9] = [
         (Tool::Clipboard, "clipboard"),
         (Tool::Wallpaper, "wallpaper"),
         (Tool::Compress, "compress"),
@@ -74,7 +72,6 @@ impl Tool {
         (Tool::Transcribe, "transcribe"),
         (Tool::Reminders, "reminders"),
         (Tool::Breaks, "breaks"),
-        (Tool::Power, "power"),
     ];
 
     fn id(self) -> &'static str {
@@ -105,7 +102,6 @@ impl Tool {
             Tool::Transcribe => Screen::Transcribe,
             Tool::Reminders => Screen::Reminders,
             Tool::Breaks => Screen::Breaks,
-            Tool::Power => Screen::Power,
         }
     }
 }
@@ -122,7 +118,6 @@ pub enum Screen {
     Cutout,
     Sign,
     Transcribe,
-    Power,
     /// Donations: Cafecito and USDT.
     Support,
     /// The full-screen screenshot to select text on.
@@ -176,10 +171,6 @@ const NAV: &[(&str, &[NavItem])] = &[
             (Screen::Sign, "✒", "Sign PDF"),
             (Screen::Transcribe, "🎤", "Audio to text"),
         ],
-    ),
-    (
-        "SYSTEM",
-        &[(Screen::Power, "🔌", "Shut down timer")],
     ),
 ];
 
@@ -826,7 +817,6 @@ fn pages(ctx: &egui::Context) -> std::collections::HashMap<Screen, Box<dyn Page>
         Box::<reminders::RemindersPage>::default(),
     );
     pages.insert(Screen::Breaks, Box::<breaks::BreaksPage>::default());
-    pages.insert(Screen::Power, Box::<power::PowerPage>::default());
     pages.insert(Screen::Sign, Box::<sign::SignPage>::default());
     pages.insert(
         Screen::Transcribe,

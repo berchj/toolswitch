@@ -1,4 +1,4 @@
-// The tools that work by themselves (reminders, breaks, the shut down timer) share one
+// The tools that work by themselves (reminders, breaks) share one
 // background thread that wakes up every few seconds and gives each turned-on tool a turn. Nothing else runs while they have nothing to do.
 
 use crate::config;
@@ -7,7 +7,7 @@ use std::time::Duration;
 
 const TICK: Duration = Duration::from_secs(15);
 
-/// `refresh_tray` rebuilds the tray menu, which shows countdowns (next break, shut down).
+/// `refresh_tray` rebuilds the tray menu, which shows countdowns (next break).
 pub fn start(ctx: egui::Context, refresh_tray: impl Fn() + Send + 'static) {
     std::thread::spawn(move || {
         let mut last = std::time::SystemTime::now();
@@ -30,7 +30,6 @@ pub fn start(ctx: egui::Context, refresh_tray: impl Fn() + Send + 'static) {
             if config::enabled("breaks") {
                 turn(&|| crate::breaks::tick(woke_up));
             }
-            turn(&crate::power::tick);
             crate::cutout::release_if_idle();
             if changed {
                 ctx.request_repaint();
