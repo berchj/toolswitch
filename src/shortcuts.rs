@@ -21,18 +21,10 @@ pub const TOOLS: &[(&str, &str, &str)] = &[
     ("ocr", "toolswitch: text from screen", "Super+Shift+X"),
     ("cutout", "toolswitch: remove background", "Super+Shift+B"),
     ("reminders", "toolswitch: new reminder", "Super+Shift+R"),
-    ("calendar", "toolswitch: calendar", "Super+Shift+E"),
     ("sign", "toolswitch: sign PDF", "Super+Shift+S"),
     ("transcribe", "toolswitch: audio to text", "Super+Shift+A"),
     ("breaks", "toolswitch: breaks", "Super+Shift+P"),
-    ("organize", "toolswitch: tidy downloads", "Super+Shift+O"),
-    ("backup", "toolswitch: backup", "Super+Shift+K"),
-    ("cleanup", "toolswitch: clean up", "Super+Shift+L"),
-    ("monitor", "toolswitch: watch the PC", "Super+Shift+M"),
     ("power", "toolswitch: shut down timer", "Super+Shift+Q"),
-    ("updates", "toolswitch: updates", "Super+Shift+U"),
-    ("security", "toolswitch: security check", "Super+Shift+G"),
-    ("jira", "toolswitch: Jira issues", "Super+Shift+J"),
     (
         "wallpaper-random",
         "toolswitch: random wallpaper",
@@ -66,6 +58,13 @@ fn default(tool: &str) -> String {
 }
 
 pub fn register_all() {
+    #[cfg(target_os = "linux")]
+    if gnome::available() {
+        let known: Vec<&str> = TOOLS.iter().map(|t| t.0).collect();
+        if let Err(error) = gnome::forget_others(&known) {
+            eprintln!("Could not remove old shortcuts from GNOME: {error}");
+        }
+    }
     for (tool, name, _) in TOOLS {
         // A turned-off tool keeps its keybinding in GNOME, but with no keys.
         let on = config::enabled(tool.split('-').next().unwrap_or(tool));
@@ -152,28 +151,56 @@ mod gnome {
         ])?;
         gsettings(&["set", &schema, "binding", &gvariant(&to_gnome(accel))])?;
 
-        // "@as []" or "['/a/', '/b/']"
+        let mut paths = keybindings()?;
+        if !paths.contains(&path) {
+            paths.push(path);
+            set_keybindings(&paths)?;
+        }
+        Ok(())
+    }
+
+    /// Older versions had more tools: their keybindings, left without keys, are taken out of
+    /// GNOME's list so they don't linger in Settings > Keyboard.
+    pub fn forget_others(known: &[&str]) -> Result<(), String> {
+        let prefix = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/toolswitch-";
+        let (keep, gone): (Vec<String>, Vec<String>) =
+            keybindings()?.into_iter().partition(|path| {
+                path.strip_prefix(prefix)
+                    .is_none_or(|rest| known.contains(&rest.trim_end_matches('/')))
+            });
+        if gone.is_empty() {
+            return Ok(());
+        }
+        for path in &gone {
+            let schema = format!("{MEDIA_KEYS}.custom-keybinding:{path}");
+            gsettings(&["reset-recursively", &schema])?;
+        }
+        set_keybindings(&keep)
+    }
+
+    /// GNOME's list of custom keybindings: "@as []" or "['/a/', '/b/']".
+    fn keybindings() -> Result<Vec<String>, String> {
         let list = gsettings(&["get", MEDIA_KEYS, "custom-keybindings"])?;
-        let mut paths: Vec<String> = list
+        Ok(list
             .trim_start_matches("@as")
             .trim()
             .trim_matches(|c| c == '[' || c == ']')
             .split(',')
             .map(|p| p.trim().trim_matches('\'').to_string())
             .filter(|p| !p.is_empty())
-            .collect();
-        if !paths.contains(&path) {
-            paths.push(path);
-            let value = format!(
-                "[{}]",
-                paths
-                    .iter()
-                    .map(|p| gvariant(p))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            );
-            gsettings(&["set", MEDIA_KEYS, "custom-keybindings", &value])?;
-        }
+            .collect())
+    }
+
+    fn set_keybindings(paths: &[String]) -> Result<(), String> {
+        let value = format!(
+            "[{}]",
+            paths
+                .iter()
+                .map(|p| gvariant(p))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        gsettings(&["set", MEDIA_KEYS, "custom-keybindings", &value])?;
         Ok(())
     }
 

@@ -11,16 +11,10 @@
 //   toolswitch sign [PDF files]              sign them
 //   toolswitch transcribe [audio or video files]   turn their speech into text
 //   toolswitch reminders   open Reminders to add one
-//   toolswitch calendar    open today's Google Calendar events
-//   toolswitch jira        open the Jira issues assigned to you
-//   toolswitch security    check this computer's security
 //   toolswitch wallpaper-next | wallpaper-prev | wallpaper-random
 
 mod audio;
-mod backup;
-mod calendar_view;
 mod breaks;
-mod cleanup;
 mod clipboard;
 mod clipboard_view;
 mod compress;
@@ -29,20 +23,15 @@ mod config;
 mod cutout;
 mod cutout_view;
 mod desktop;
-mod gcal;
 mod home;
 mod instance;
-mod jira;
 mod jobs;
 mod models;
-mod monitor;
 mod ocr;
 mod ocr_view;
-mod organize;
 mod power;
 mod reminders;
 mod screen;
-mod security;
 mod services;
 mod shortcut_editor;
 mod shortcuts;
@@ -53,7 +42,6 @@ mod theme;
 mod transcribe;
 mod transcribe_view;
 mod tray;
-mod updates;
 mod wallpaper;
 mod wallpaper_view;
 
@@ -71,20 +59,12 @@ pub enum Tool {
     Sign,
     Transcribe,
     Reminders,
-    Calendar,
     Breaks,
-    Organize,
-    Backup,
-    Cleanup,
-    Monitor,
     Power,
-    Updates,
-    Security,
-    Jira,
 }
 
 impl Tool {
-    const ALL: [(Tool, &'static str); 18] = [
+    const ALL: [(Tool, &'static str); 10] = [
         (Tool::Clipboard, "clipboard"),
         (Tool::Wallpaper, "wallpaper"),
         (Tool::Compress, "compress"),
@@ -93,28 +73,16 @@ impl Tool {
         (Tool::Sign, "sign"),
         (Tool::Transcribe, "transcribe"),
         (Tool::Reminders, "reminders"),
-        (Tool::Calendar, "calendar"),
         (Tool::Breaks, "breaks"),
-        (Tool::Organize, "organize"),
-        (Tool::Backup, "backup"),
-        (Tool::Cleanup, "cleanup"),
-        (Tool::Monitor, "monitor"),
         (Tool::Power, "power"),
-        (Tool::Updates, "updates"),
-        (Tool::Security, "security"),
-        (Tool::Jira, "jira"),
     ];
 
     fn id(self) -> &'static str {
         Self::ALL.iter().find(|t| t.0 == self).map_or("", |t| t.1)
     }
 
-    /// Hidden tools can't be opened from a shortcut or the command line either.
     fn from_arg(arg: &str) -> Option<Self> {
-        Self::ALL
-            .iter()
-            .find(|t| t.1 == arg && !config::hidden(t.1))
-            .map(|t| t.0)
+        Self::ALL.iter().find(|t| t.1 == arg).map(|t| t.0)
     }
 
     /// Tools that take files from the command line (the right-click menu).
@@ -136,16 +104,8 @@ impl Tool {
             Tool::Sign => Screen::Sign,
             Tool::Transcribe => Screen::Transcribe,
             Tool::Reminders => Screen::Reminders,
-            Tool::Calendar => Screen::Calendar,
             Tool::Breaks => Screen::Breaks,
-            Tool::Organize => Screen::Organize,
-            Tool::Backup => Screen::Backup,
-            Tool::Cleanup => Screen::Cleanup,
-            Tool::Monitor => Screen::Monitor,
             Tool::Power => Screen::Power,
-            Tool::Updates => Screen::Updates,
-            Tool::Security => Screen::Security,
-            Tool::Jira => Screen::Jira,
         }
     }
 }
@@ -157,20 +117,12 @@ pub enum Screen {
     Clipboard,
     Wallpapers,
     Reminders,
-    Calendar,
     Breaks,
     Compress,
     Cutout,
     Sign,
     Transcribe,
-    Organize,
-    Backup,
-    Cleanup,
-    Monitor,
     Power,
-    Updates,
-    Security,
-    Jira,
     /// Donations: Cafecito and USDT.
     Support,
     /// The full-screen screenshot to select text on.
@@ -213,7 +165,6 @@ const NAV: &[(&str, &[NavItem])] = &[
             (Screen::Clipboard, "📋", "Clipboard"),
             (Screen::Wallpapers, "🖼", "Wallpapers"),
             (Screen::Reminders, "⏰", "Reminders"),
-            (Screen::Calendar, "📅", "Calendar"),
             (Screen::Breaks, "☕", "Breaks"),
         ],
     ),
@@ -224,29 +175,13 @@ const NAV: &[(&str, &[NavItem])] = &[
             (Screen::Cutout, "✂", "Remove background"),
             (Screen::Sign, "✒", "Sign PDF"),
             (Screen::Transcribe, "🎤", "Audio to text"),
-            (Screen::Organize, "📂", "Tidy downloads"),
-            (Screen::Backup, "💾", "Backup"),
         ],
     ),
     (
         "SYSTEM",
-        &[
-            (Screen::Cleanup, "♻", "Clean up"),
-            (Screen::Monitor, "📈", "Watch the PC"),
-            (Screen::Power, "🔌", "Shut down timer"),
-            (Screen::Updates, "⟳", "Updates"),
-            (Screen::Security, "🛡", "Security check"),
-        ],
+        &[(Screen::Power, "🔌", "Shut down timer")],
     ),
-    ("WORK", &[(Screen::Jira, "☑", "Jira")]),
 ];
-
-/// The screen belongs to a hidden tool.
-fn screen_hidden(screen: Screen) -> bool {
-    Tool::ALL
-        .iter()
-        .any(|&(tool, id)| tool.screen() == screen && config::hidden(id))
-}
 
 /// A second launch's command line, as one line for the socket: fields separated by tabs.
 fn to_line(args: &[String]) -> String {
@@ -581,9 +516,6 @@ impl App {
                         // Compact, so every tool fits without scrolling.
                         ui.spacing_mut().item_spacing.y = 1.0;
                         for (group, items) in NAV {
-                            if items.iter().all(|item| screen_hidden(item.0)) {
-                                continue;
-                            }
                             if !group.is_empty() {
                                 ui.add_space(5.0);
                                 ui.horizontal(|ui| {
@@ -594,9 +526,6 @@ impl App {
                                 });
                             }
                             for &(screen, icon, name) in *items {
-                                if screen_hidden(screen) {
-                                    continue;
-                                }
                                 if nav_item(ui, icon, name, self.screen == screen, true).clicked()
                                     && self.screen != screen
                                 {
@@ -898,20 +827,12 @@ fn pages(ctx: &egui::Context) -> std::collections::HashMap<Screen, Box<dyn Page>
     );
     pages.insert(Screen::Breaks, Box::<breaks::BreaksPage>::default());
     pages.insert(Screen::Power, Box::<power::PowerPage>::default());
-    pages.insert(Screen::Monitor, Box::<monitor::MonitorPage>::default());
-    pages.insert(Screen::Cleanup, Box::<cleanup::CleanupPage>::default());
-    pages.insert(Screen::Organize, Box::<organize::OrganizePage>::default());
-    pages.insert(Screen::Backup, Box::<backup::BackupPage>::default());
-    pages.insert(Screen::Updates, Box::<updates::UpdatesPage>::default());
     pages.insert(Screen::Sign, Box::<sign::SignPage>::default());
     pages.insert(
         Screen::Transcribe,
         Box::<transcribe_view::TranscribePage>::default(),
     );
-    pages.insert(Screen::Jira, Box::<jira::JiraPage>::default());
-    pages.insert(Screen::Security, Box::<security::SecurityPage>::default());
     pages.insert(Screen::Support, Box::<support::SupportPage>::default());
-    pages.insert(Screen::Calendar, Box::new(calendar_view::CalendarPage::new()));
     for (screen, name) in [] {
         pages.insert(screen, Box::new(Placeholder(name)));
     }

@@ -10,7 +10,6 @@ global-hotkey = "=0.8.0"
 arboard = { version = "=3.6.1", default-features = false, features = ["image-data"] }
 chrono = { version = "=0.4.45", default-features = false, features = ["clock", "std"] }
 color_quant = "=2.0.0"
-getrandom = "=0.3.4"
 sha2 = "=0.11.1"
 eframe = { version = "=0.36.2", default-features = false, features = ["glow", "x11", "wayland", "default_fonts"] }
 image = { version = "=0.25.10", default-features = false, features = ["jpeg", "png", "webp", "bmp"] }
@@ -28,8 +27,6 @@ opus-decoder = "=0.1.1"
 symphonia = { version = "=0.5.5", default-features = false, features = ["aac", "adpcm", "alac", "flac", "isomp4", "mkv", "mp3", "ogg", "pcm", "vorbis", "wav"] }
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.151"
-sysinfo = { version = "=0.39.6", default-features = false, features = ["system", "disk"] }
-trash = { version = "=5.2.9", default-features = false, features = ["coinit_apartmentthreaded"] }
 zip = { version = "=8.6.0", default-features = false, features = ["deflate"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]

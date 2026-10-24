@@ -21,22 +21,10 @@ pub struct Config {
     pub welcomed: bool,
 }
 
-/// Tools that move or delete files, or interrupt you, start turned off.
-pub const OFF_BY_DEFAULT: &[&str] = &["organize", "backup", "breaks", "jira", "calendar"];
-
-/// Tools taken out of the app for now: not shown anywhere and never running. Their code stays.
-pub const HIDDEN: &[&str] = &[
-    "calendar", "jira", "security", "updates", "backup", "cleanup", "organize", "monitor",
-];
-
-pub fn hidden(tool: &str) -> bool {
-    HIDDEN.contains(&tool)
-}
+/// Tools that interrupt you start turned off.
+pub const OFF_BY_DEFAULT: &[&str] = &["breaks"];
 
 pub fn enabled(tool: &str) -> bool {
-    if hidden(tool) {
-        return false;
-    }
     with(|config| {
         if OFF_BY_DEFAULT.contains(&tool) {
             config.enabled.contains(tool)
@@ -135,18 +123,6 @@ pub fn user_dir(xdg: &str, default: &str) -> PathBuf {
         }
     }
     home.join(default)
-}
-
-/// A path to show people: the home folder as "~".
-pub fn short(path: &Path) -> String {
-    let text = path.to_string_lossy();
-    let home = home();
-    match path.strip_prefix(&home) {
-        Ok(rest) if !home.as_os_str().is_empty() => {
-            format!("~{}{}", std::path::MAIN_SEPARATOR, rest.display())
-        }
-        _ => text.into_owned(),
-    }
 }
 
 pub fn home() -> PathBuf {

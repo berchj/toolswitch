@@ -57,14 +57,6 @@ const GROUPS: &[(&str, &[ToolInfo])] = &[
                 shortcuts: &[("reminders", "New reminder")],
             },
             ToolInfo {
-                id: "calendar",
-                icon: "📅",
-                name: "Calendar",
-                description: "Your Google Calendar: today's events, new ones with guests, and a heads-up before each.",
-                screen: Some(Screen::Calendar),
-                shortcuts: &[("calendar", "Open")],
-            },
-            ToolInfo {
                 id: "breaks",
                 icon: "☕",
                 name: "Breaks",
@@ -109,43 +101,11 @@ const GROUPS: &[(&str, &[ToolInfo])] = &[
                 screen: Some(Screen::Transcribe),
                 shortcuts: &[("transcribe", "Open")],
             },
-            ToolInfo {
-                id: "organize",
-                icon: "📂",
-                name: "Tidy downloads",
-                description: "Moves what you download to its folder by type, by itself. Every move can be undone.",
-                screen: Some(Screen::Organize),
-                shortcuts: &[("organize", "Open")],
-            },
-            ToolInfo {
-                id: "backup",
-                icon: "💾",
-                name: "Backup",
-                description: "Copies your folders to another disk every day, by itself.",
-                screen: Some(Screen::Backup),
-                shortcuts: &[("backup", "Open")],
-            },
         ],
     ),
     (
         "System",
         &[
-            ToolInfo {
-                id: "cleanup",
-                icon: "♻",
-                name: "Clean up",
-                description: "Shows what takes space (trash, caches, old downloads, big files) and frees it.",
-                screen: Some(Screen::Cleanup),
-                shortcuts: &[("cleanup", "Open")],
-            },
-            ToolInfo {
-                id: "monitor",
-                icon: "📈",
-                name: "Watch the PC",
-                description: "Warns when a disk is almost full or a program gets stuck eating the processor or memory.",
-                screen: Some(Screen::Monitor),
-                shortcuts: &[("monitor", "Open")],
-            },
             ToolInfo {
                 id: "power",
                 icon: "🔌",
@@ -154,41 +114,9 @@ const GROUPS: &[(&str, &[ToolInfo])] = &[
                 screen: Some(Screen::Power),
                 shortcuts: &[("power", "Open")],
             },
-            ToolInfo {
-                id: "updates",
-                icon: "⟳",
-                name: "Updates",
-                description: "Updates the system and your apps with one click, and tells you when there's something new.",
-                screen: Some(Screen::Updates),
-                shortcuts: &[("updates", "Open")],
-            },
-            ToolInfo {
-                id: "security",
-                icon: "🛡",
-                name: "Security check",
-                description: "Finds what's risky in how this computer is set up and how to fix it. Claude can write the plan.",
-                screen: Some(Screen::Security),
-                shortcuts: &[("security", "Open")],
-            },
         ],
     ),
-    (
-        "Work",
-        &[ToolInfo {
-            id: "jira",
-            icon: "☑",
-            name: "Jira",
-            description: "A summary of the Jira issues assigned to you, and a heads-up when you get a new one.",
-            screen: Some(Screen::Jira),
-            shortcuts: &[("jira", "Open")],
-        }],
-    ),
 ];
-
-/// The group's tools that aren't hidden (see config::HIDDEN).
-fn shown(tools: &'static [ToolInfo]) -> Vec<&'static ToolInfo> {
-    tools.iter().filter(|t| !config::hidden(t.id)).collect()
-}
 
 /// A small card for the welcome screen. Returns true if its switch changed.
 fn tile(ui: &mut egui::Ui, tool: &ToolInfo) -> bool {
@@ -223,7 +151,7 @@ fn tile(ui: &mut egui::Ui, tool: &ToolInfo) -> bool {
 }
 
 /// Tools without a switch: they only do something when you use them.
-const ALWAYS_ON: &[&str] = &["cleanup", "power", "sign"];
+const ALWAYS_ON: &[&str] = &["power", "sign"];
 
 #[derive(Default)]
 pub struct Home {
@@ -252,14 +180,10 @@ impl Home {
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 for (group, tools) in GROUPS {
-                    let tools = shown(tools);
-                    if tools.is_empty() {
-                        continue;
-                    }
                     ui.add_space(6.0);
                     ui.label(egui::RichText::new(*group).size(13.0).color(theme::FAINT));
                     ui.add_space(4.0);
-                    for tool in tools {
+                    for tool in tools.iter() {
                         self.card(ui, tool, &mut action);
                         ui.add_space(8.0);
                     }
@@ -294,16 +218,12 @@ impl Home {
                 // Room for the scroll bar on the right.
                 ui.set_max_width(ui.available_width() - 12.0);
                 for (group, tools) in GROUPS {
-                    let tools = shown(tools);
-                    if tools.is_empty() {
-                        continue;
-                    }
                     ui.label(egui::RichText::new(*group).size(13.0).color(theme::FAINT));
                     ui.add_space(4.0);
                     // Two tiles per row.
                     for pair in tools.chunks(2) {
                         ui.columns(2, |cols| {
-                            for (col, &tool) in cols.iter_mut().zip(pair) {
+                            for (col, tool) in cols.iter_mut().zip(pair) {
                                 changed |= tile(col, tool);
                             }
                         });

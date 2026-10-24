@@ -1,6 +1,5 @@
-// The tools that work by themselves (reminders, calendar notifications, breaks, the shut down timer, watching the PC,
-// tidying downloads, backups, updates, Jira) share one background thread that wakes up every few
-// seconds and gives each turned-on tool a turn. Nothing else runs while they have nothing to do.
+// The tools that work by themselves (reminders, breaks, the shut down timer) share one
+// background thread that wakes up every few seconds and gives each turned-on tool a turn. Nothing else runs while they have nothing to do.
 
 use crate::config;
 use eframe::egui;
@@ -28,29 +27,11 @@ pub fn start(ctx: egui::Context, refresh_tray: impl Fn() + Send + 'static) {
             if config::enabled("reminders") {
                 turn(&crate::reminders::tick);
             }
-            if config::enabled("calendar") {
-                turn(&crate::gcal::tick);
-            }
             if config::enabled("breaks") {
                 turn(&|| crate::breaks::tick(woke_up));
             }
             turn(&crate::power::tick);
             crate::cutout::release_if_idle();
-            if config::enabled("monitor") {
-                turn(&crate::monitor::tick);
-            }
-            if config::enabled("organize") {
-                turn(&crate::organize::tick);
-            }
-            if config::enabled("backup") {
-                turn(&crate::backup::tick);
-            }
-            if config::enabled("updates") {
-                turn(&crate::updates::tick);
-            }
-            if config::enabled("jira") {
-                turn(&crate::jira::tick);
-            }
             if changed {
                 ctx.request_repaint();
             }
